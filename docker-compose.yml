@@ -1,0 +1,20 @@
+services:
+  trademaster:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: trademaster:latest
+    container_name: trademaster
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - CORS_ORIGINS=http://localhost:8000
+      - LOG_LEVEL=INFO
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - HF_MODEL_REPO=${HF_MODEL_REPO:-}
+    volumes:
+      # Persist downloaded/trained models across rebuilds.
+      - ./models/trained:/app/models/trained

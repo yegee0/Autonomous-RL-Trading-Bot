@@ -1,11 +1,31 @@
-import yfinance as yf
+import time
+import warnings
+from functools import lru_cache
+from typing import Optional
+
+import numpy as np
 import pandas as pd
 import ta
-import streamlit as st
-import numpy as np
-import warnings
+import yfinance as yf
 
 warnings.filterwarnings('ignore')
+
+_CACHE: dict = {}
+_CACHE_TS: dict = {}
+
+
+def _cached(key: str, ttl: int) -> Optional[pd.DataFrame]:
+    hit = _CACHE.get(key)
+    if hit is None:
+        return None
+    if time.time() - _CACHE_TS.get(key, 0) > ttl:
+        return None
+    return hit
+
+
+def _set_cache(key: str, df: pd.DataFrame) -> None:
+    _CACHE[key] = df
+    _CACHE_TS[key] = time.time()
 
 
 def fetch_data(ticker, period="1y", interval="1d"):
@@ -37,9 +57,13 @@ def fetch_data(ticker, period="1y", interval="1d"):
         return None
 
 
-@st.cache_data(ttl=60)
 def fetch_5m_with_indicators(ticker, lookback_days="5d"):
-    """Fetch 5m data with indicators - 1 minute cache"""
+    """Fetch 5m data with indicators - 60s in-memory cache"""
+    cache_key = f"5m:{ticker}:{lookback_days}"
+    cached = _cached(cache_key, ttl=60)
+    if cached is not None:
+        return cached
+
     try:
         df = yf.download(ticker, period=lookback_days, interval="5m", progress=False)
 
@@ -63,6 +87,7 @@ def fetch_5m_with_indicators(ticker, lookback_days="5d"):
         df["ATR"] = ta.volatility.average_true_range(df["High"], df["Low"], df["Close"], window=14)
 
         df = df.dropna()
+        _set_cache(cache_key, df)
 
         return df
 

@@ -1,13 +1,29 @@
-torch==2.1.0
-stable-baselines3==2.2.1
-gymnasium==0.29.1
-streamlit==1.30.0
-yfinance==0.2.36
-pandas==2.1.4
-numpy==1.26.2
-plotly==5.18.0
-ta==0.11.0
-requests==2.31.0
-transformers==4.36.2
-duckduckgo_search==4.2
+# Core
+numpy>=1.26,<2
+pandas>=2.1,<3
+
+# Market data + indicators
+yfinance>=1.8
+ta>=0.11
+
+# RL
+torch>=2.1
+stable-baselines3>=2.2
+gymnasium>=0.29
+
+# Sentiment
+transformers>=4.36
+huggingface_hub>=0.20
+
+# Market intelligence
+requests>=2.31
+duckduckgo_search>=4.2
+
+# Backend
+fastapi>=0.109
+uvicorn[standard]>=0.27
+websockets>=12
+python-multipart
+
+# Utilities
 tqdm>=4.66

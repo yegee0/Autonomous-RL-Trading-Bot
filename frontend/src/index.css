@@ -1,0 +1,72 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+  body {
+    @apply bg-bg-base text-fg-primary font-sans antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  * {
+    @apply border-line;
+  }
+  ::selection {
+    background: rgba(74, 222, 128, 0.25);
+  }
+  /* tabular numbers everywhere by default — financial UI */
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply bg-bg-panel border border-line rounded-md;
+  }
+  .panel-hover {
+    @apply hover:bg-bg-hover transition-colors duration-150;
+  }
+  .hairline {
+    @apply border-b border-line;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 px-3 h-8 text-xs font-medium rounded
+      border border-line text-fg-primary bg-bg-panel hover:bg-bg-hover transition-colors;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 px-2 h-7 text-xs rounded
+      text-fg-secondary hover:text-fg-primary hover:bg-bg-hover transition-colors;
+  }
+  .label {
+    @apply text-2xs uppercase tracking-wider text-fg-muted;
+  }
+  .stat {
+    @apply font-mono text-sm text-fg-primary num;
+  }
+  .pill {
+    @apply inline-flex items-center gap-1 px-2 h-6 text-2xs font-medium rounded-full border;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a3a;
+}

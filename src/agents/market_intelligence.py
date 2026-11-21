@@ -88,13 +88,13 @@ class MarketIntelligence:
             print(f"⚠️ Macro data error: {e}")
             return {}
 
-    def get_social_intelligence(self, ticker: str) -> Dict:
-        print(f"📱 Analyzing social data for {ticker}...")
+    def get_social_intelligence(self, ticker: str, include_reddit: bool = False,
+                                include_forums: bool = False) -> Dict:
         search_term = ticker.split("-")[0].replace(".IS", "")
 
         financial_news = self._fetch_financial_news(search_term)
-        reddit_posts = self._fetch_reddit_comprehensive(search_term)
-        forum_posts = self._fetch_forum_posts(search_term)
+        reddit_posts = self._fetch_reddit_comprehensive(search_term) if include_reddit else []
+        forum_posts = self._fetch_forum_posts(search_term) if include_forums else []
 
         return {
             "financial_news": financial_news,
@@ -107,9 +107,7 @@ class MarketIntelligence:
         news = []
         sources = [
             f"{term} stock market news",
-            f"{term} financial analysis",
-            f"{term} trading news today",
-            f"{term} price forecast"
+            f"{term} price forecast",
         ]
 
         try:
@@ -166,33 +164,19 @@ class MarketIntelligence:
         return news[:limit]
 
     def _fetch_reddit_comprehensive(self, term: str, limit: int = 10) -> list:
-        posts = []
-        subreddits = [
-            "wallstreetbets", "stocks", "investing", "cryptocurrency",
-            "trading", "options", "stockmarket", "finance",
-            "bitcoin", "CryptoMarkets", "algotrading", "daytrading"
-        ]
-
-        seen_ids = set()
+        posts: list = []
+        subreddits = ["wallstreetbets", "stocks", "cryptocurrency", "stockmarket"]
+        seen_ids: set = set()
 
         for sub in subreddits:
             if len(posts) >= limit:
                 break
-
             try:
-                hot_posts = self._fetch_reddit_subreddit(sub, term, "hot", seen_ids)
-                posts.extend(hot_posts)
-
-                if len(posts) < limit:
-                    new_posts = self._fetch_reddit_subreddit(sub, term, "new", seen_ids)
-                    posts.extend(new_posts)
-
-                time.sleep(0.2)
-
+                posts.extend(self._fetch_reddit_subreddit(sub, term, "hot", seen_ids))
             except Exception:
                 continue
 
-        posts = sorted(posts, key=lambda x: x.get('score', 0), reverse=True)
+        posts.sort(key=lambda x: x.get("score", 0), reverse=True)
         return posts[:limit]
 
     def _fetch_reddit_subreddit(self, subreddit: str, term: str, sort: str, seen_ids: set) -> list:

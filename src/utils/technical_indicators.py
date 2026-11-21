@@ -67,16 +67,14 @@ def add_advanced_indicators(df):
         df['High_Low_Ratio'] = (df['High'] - df['Low']) / df['Close']
         df['Close_Open_Ratio'] = (df['Close'] - df['Open']) / df['Open']
 
-        # ============ NAN KONTROL ============
-        nan_before = df.isna().sum().sum()
-        df = df.dropna()
-        df.isna().sum().sum()
-
-        if nan_before > 0:
-            print(f"⚠️ {nan_before} NaN değer kaldırıldı")
-
-        print(f"✅ {len(df.columns)} indikatör eklendi")
-
+        # Drop only rows where the core signals (RSI/MACD/ATR) are NaN; keep SMA200 NaNs.
+        core = [c for c in ("RSI", "MACD", "ATR") if c in df.columns]
+        if core:
+            before = len(df)
+            df = df.dropna(subset=core)
+            dropped = before - len(df)
+            if dropped:
+                print(f"[indicators] dropped {dropped} rows missing core signals")
         return df
 
     except Exception as e:
