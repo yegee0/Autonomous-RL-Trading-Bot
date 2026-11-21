@@ -27,7 +27,11 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY backend/ ./backend/
 COPY src/ ./src/
 COPY scripts/ ./scripts/
-COPY models/ ./models/
+
+# Models are not baked in. They land here via:
+#   - docker-compose volume mount (models/trained -> /app/models/trained), or
+#   - `python scripts/download_model.py` after the container starts.
+RUN mkdir -p ./models/trained
 
 # Static SPA served by FastAPI
 COPY --from=frontend-build /app/frontend/dist ./frontend_dist

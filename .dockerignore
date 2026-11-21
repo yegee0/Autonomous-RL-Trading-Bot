@@ -21,6 +21,10 @@ Thumbs.db
 # Legacy archived code — not needed in image
 legacy/
 
+# Model artefacts (shipped via HF Hub / compose volume, not baked in)
+models/trained/*.zip
+models/trained/*.pkl
+
 # Secrets
 .env
 .env.local
