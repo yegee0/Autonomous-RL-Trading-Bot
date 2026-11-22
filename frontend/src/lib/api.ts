@@ -4,7 +4,11 @@ import type {
   BacktestMarker,
   BacktestReport,
   Candle,
-  NewsItem,
+  DriftReport,
+  Fundamentals,
+  GuardrailSnapshot,
+  MacroSnapshot,
+  NewsFeed,
   PaperPortfolio,
   PaperTrade,
   SignalResponse,
@@ -22,11 +26,17 @@ export const api = {
     return data;
   },
 
-  async analyze(ticker: string, period = "3mo", interval = "1d"): Promise<AnalyzeResponse> {
+  async analyze(
+    ticker: string,
+    period = "3mo",
+    interval = "1d",
+    sentiment = 0
+  ): Promise<AnalyzeResponse> {
     const { data } = await http.post<AnalyzeResponse>("/analyze", {
       ticker,
       period,
       interval,
+      sentiment,
     });
     return data;
   },
@@ -45,8 +55,20 @@ export const api = {
     return data;
   },
 
-  async news(ticker: string, limit = 8): Promise<NewsItem[]> {
-    const { data } = await http.get<NewsItem[]>(`/news/${ticker}`, { params: { limit } });
+  async news(ticker: string, limit = 8, reddit = true): Promise<NewsFeed> {
+    const { data } = await http.get<NewsFeed>(`/news/${ticker}`, {
+      params: { limit, reddit },
+    });
+    return data;
+  },
+
+  async overview(ticker: string): Promise<Fundamentals> {
+    const { data } = await http.get<Fundamentals>(`/overview/${ticker}`);
+    return data;
+  },
+
+  async macro(): Promise<MacroSnapshot> {
+    const { data } = await http.get<MacroSnapshot>(`/macro`);
     return data;
   },
 
@@ -84,6 +106,24 @@ export const api = {
 
   async paperReset(): Promise<{ status: string; cash: number }> {
     const { data } = await http.post<{ status: string; cash: number }>("/paper/reset");
+    return data;
+  },
+
+  async guardrails(): Promise<GuardrailSnapshot> {
+    const { data } = await http.get<GuardrailSnapshot>("/paper/guardrails");
+    return data;
+  },
+
+  async guardrailsReset(): Promise<GuardrailSnapshot> {
+    const { data } = await http.post<GuardrailSnapshot>("/paper/guardrails/reset");
+    return data;
+  },
+
+  async drift(ticker: string, period = "1y", interval = "1d"): Promise<DriftReport> {
+    const { data } = await http.get<DriftReport>(`/drift/${ticker}`, {
+      params: { period, interval },
+      timeout: 120_000,
+    });
     return data;
   },
 };

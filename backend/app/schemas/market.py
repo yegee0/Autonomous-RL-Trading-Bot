@@ -21,6 +21,9 @@ class Indicators(BaseModel):
     sma50: Optional[float] = None
     bb_upper: Optional[float] = None
     bb_lower: Optional[float] = None
+    stoch_k: Optional[float] = None
+    stoch_d: Optional[float] = None
+    volume_ratio: Optional[float] = None
 
 
 class SignalResponse(BaseModel):
@@ -59,10 +62,66 @@ class NewsItem(BaseModel):
     time_ago: Optional[str] = None
 
 
+class RedditPost(BaseModel):
+    title: str
+    body: Optional[str] = ""
+    score: int = 0
+    comments: int = 0
+    sub: str = ""
+    link: str
+    sentiment: float = 0.0
+    time_ago: Optional[str] = None
+
+
+class NewsFeed(BaseModel):
+    news: List[NewsItem] = []
+    reddit: List[RedditPost] = []
+    avg_sentiment: float = 0.0
+
+
+class MacroMetric(BaseModel):
+    value: float
+    delta: float = 0.0
+
+
+class MacroSnapshot(BaseModel):
+    vix: Optional[MacroMetric] = None
+    us10y: Optional[MacroMetric] = None
+    dxy: Optional[MacroMetric] = None
+    fear_greed: Optional[float] = None
+    fear_greed_label: Optional[str] = None
+
+
+class Fundamentals(BaseModel):
+    company_name: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    description: Optional[str] = None
+    website: Optional[str] = None
+    country: Optional[str] = None
+    market_cap: Optional[float] = None
+    trailing_pe: Optional[float] = None
+    forward_pe: Optional[float] = None
+    price_to_book: Optional[float] = None
+    profit_margin: Optional[float] = None
+    roe: Optional[float] = None
+    revenue: Optional[float] = None
+    revenue_growth: Optional[float] = None
+    earnings_growth: Optional[float] = None
+    dividend_yield: Optional[float] = None
+    beta: Optional[float] = None
+    fifty_two_week_high: Optional[float] = None
+    fifty_two_week_low: Optional[float] = None
+    target_mean: Optional[float] = None
+    recommendation: Optional[str] = None
+    is_crypto: bool = False
+
+
 class AnalyzeRequest(BaseModel):
     ticker: str
     period: str = "3mo"
     interval: str = "1d"
+    sentiment: float = 0.0
 
 
 class AnalyzeResponse(BaseModel):

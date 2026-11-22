@@ -17,11 +17,24 @@ from src.agents.rl_agent import (
     calculate_fallback_signal,
     load_agent,
 )
-from src.models.trading_env import OBS_DIM, build_observation
+from src.models.trading_env import (
+    COMMISSION,
+    OBS_DIM,
+    SLIPPAGE_BPS_PER_ATR,
+    SPREAD_BPS,
+    build_observation,
+)
 
 
 INITIAL_BALANCE = 10_000.0
-COMMISSION = 0.001
+
+
+def _fill_price(mid: float, atr: float, frac: float, side: str) -> float:
+    """Realistic fill = mid price adjusted for half-spread + size-aware slippage."""
+    spread = SPREAD_BPS / 10_000.0
+    size_impact = (atr / max(mid, 1e-9)) * SLIPPAGE_BPS_PER_ATR * abs(frac) / 10.0
+    bps = spread + size_impact
+    return mid * (1.0 + bps if side == "buy" else 1.0 - bps)
 
 
 def _normalize_stacked(env, df: pd.DataFrame, idx: int, cash: float, shares: float) -> np.ndarray:
@@ -37,21 +50,25 @@ def _normalize_stacked(env, df: pd.DataFrame, idx: int, cash: float, shares: flo
     return np.concatenate(frames, axis=1).astype(np.float32)
 
 
-def _apply_action(action: int, cash: float, shares: float, price: float) -> Tuple[float, float, str]:
+def _apply_action(
+    action: int, cash: float, shares: float, price: float, atr: float = 0.0
+) -> Tuple[float, float, str]:
     if action in (1, 2, 3):
         frac = {1: 0.25, 2: 0.50, 3: 1.0}[action]
         spend = cash * frac
         if spend > 10:
             total = spend * (1.0 + COMMISSION)
             if cash >= total:
+                fill = _fill_price(price, atr, frac, "buy")
                 cash -= total
-                shares += spend / price
+                shares += spend / fill
                 return cash, shares, "buy"
     elif action in (4, 5, 6):
         if shares > 0:
             frac = {4: 0.25, 5: 0.50, 6: 1.0}[action]
             sold = shares * frac
-            cash += sold * price * (1.0 - COMMISSION)
+            fill = _fill_price(price, atr, frac, "sell")
+            cash += sold * fill * (1.0 - COMMISSION)
             shares -= sold
             return cash, shares, "sell"
     return cash, shares, "hold"
@@ -74,18 +91,21 @@ def run_backtest(ticker: str, df: pd.DataFrame, max_bars: int = 400) -> dict:
 
     for i in range(len(df)):
         price = float(df.iloc[i]["Close"])
+        atr = float(df.iloc[i].get("ATR", 0.0) or 0.0)
 
         if model is not None:
             try:
                 obs = _normalize_stacked(env, df, i, cash, shares)
-                action, _ = model.predict(obs, deterministic=True)
+                # Stochastic sampling matches the live signal endpoint; argmax-only
+                # policies that lean toward HOLD would otherwise never trade here.
+                action, _ = model.predict(obs, deterministic=False)
                 action = int(action[0])
             except Exception:
                 action, _ = calculate_fallback_signal(df.iloc[: i + 1], 0.0)
         else:
             action, _ = calculate_fallback_signal(df.iloc[: i + 1], 0.0)
 
-        new_cash, new_shares, kind = _apply_action(action, cash, shares, price)
+        new_cash, new_shares, kind = _apply_action(action, cash, shares, price, atr)
         if kind != "hold":
             trades.append(
                 {

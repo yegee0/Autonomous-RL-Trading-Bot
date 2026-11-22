@@ -8,6 +8,7 @@ from backend.app.schemas.paper import (
     PaperTrade,
     PaperTradeRequest,
 )
+from backend.app.services import guardrails as gr
 from backend.app.services import market_service as ms
 from backend.app.services import paper_store as ps
 
@@ -57,14 +58,73 @@ def trades(limit: int = Query(50, ge=1, le=500), ticker: str | None = None) -> L
 
 @router.post("/paper/trade", response_model=PaperTrade)
 def trade(req: PaperTradeRequest) -> PaperTrade:
+    ticker = req.ticker.upper().strip()
+
+    # Build the equity + position + indicator view the guardrails need.
+    positions = {p.ticker: p for p in ps.list_positions()}
+    pos = positions.get(ticker)
+    cash = ps.get_cash()
+    total_mv = sum(p.qty * p.avg_cost for p in positions.values())  # approx, fast path
+    equity = cash + total_mv
+
+    rsi = None
     try:
-        t = ps.execute_trade(req.ticker.upper().strip(), req.side, req.qty, req.price)
+        df = ms.fetch_price_df(ticker, period="1mo", interval="1d")
+        if df is not None and not df.empty:
+            df = ms.add_advanced_indicators(df)
+            if "RSI" in df.columns and not df.empty:
+                rsi_val = df.iloc[-1].get("RSI")
+                if rsi_val is not None and rsi_val == rsi_val:  # NaN-safe
+                    rsi = float(rsi_val)
+    except Exception:
+        rsi = None  # indicator fetch is best-effort; guardrails degrade gracefully
+
+    decision = gr.check_order(
+        ticker=ticker,
+        side=req.side,
+        qty=req.qty,
+        price=req.price,
+        equity=equity,
+        current_position_qty=pos.qty if pos else 0.0,
+        rsi=rsi,
+    )
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": decision.code, "message": decision.reason},
+        )
+
+    try:
+        t = ps.execute_trade(ticker, req.side, req.qty, req.price)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    gr.record_fill()
     return PaperTrade(id=t.id, ts=t.ts, ticker=t.ticker, side=t.side, qty=t.qty, price=t.price, fee=t.fee)
 
 
 @router.post("/paper/reset")
 def reset() -> dict:
     ps.reset_portfolio()
+    gr.mark_day_start(ps.get_cash())
+    gr.reset_kill_switch()
     return {"status": "reset", "cash": ps.get_cash()}
+
+
+@router.get("/paper/guardrails")
+def guardrail_status() -> dict:
+    return gr.snapshot()
+
+
+@router.post("/paper/guardrails/reset")
+def guardrail_reset() -> dict:
+    gr.reset_kill_switch()
+    gr.mark_day_start(_current_equity())
+    return gr.snapshot()
+
+
+def _current_equity() -> float:
+    positions = ps.list_positions()
+    cash = ps.get_cash()
+    total_mv = sum(p.qty * p.avg_cost for p in positions)
+    return float(cash + total_mv)

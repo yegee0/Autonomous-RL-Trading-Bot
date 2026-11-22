@@ -116,8 +116,7 @@ export function PaperPanel({ ticker, livePrice }: Props) {
 
       {tradeM.isError && (
         <p className="text-2xs text-accent-short">
-          {(tradeM.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-            "Trade failed."}
+          {formatTradeError(tradeM.error)}
         </p>
       )}
 
@@ -149,4 +148,15 @@ function Stat({ k, v }: { k: string; v: string }) {
       <div className="font-mono num text-sm text-fg-primary mt-0.5">{v}</div>
     </div>
   );
+}
+
+function formatTradeError(err: unknown): string {
+  const data = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  if (!data) return "Trade failed.";
+  if (typeof data === "string") return data;
+  if (typeof data === "object") {
+    const d = data as { code?: string; message?: string };
+    if (d.message) return d.code ? `${d.code}: ${d.message}` : d.message;
+  }
+  return "Trade rejected by guardrails.";
 }

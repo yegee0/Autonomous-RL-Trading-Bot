@@ -22,7 +22,14 @@ class MarketSentimentAgent:
         try:
             self.tokenizer = BertTokenizer.from_pretrained('ProsusAI/finbert')
             self.model = BertForSequenceClassification.from_pretrained('ProsusAI/finbert')
-            self.nlp = pipeline("sentiment-analysis", model=self.model, tokenizer=self.tokenizer)
+            # Force CPU — some environments have mismatched CUDA (e.g. an older
+            # GPU where PyTorch's kernels aren't built), which would otherwise
+            # error on every inference call.
+            self.nlp = pipeline(
+                "sentiment-analysis", model=self.model, tokenizer=self.tokenizer, device=-1
+            )
+            # Smoke-test once so a broken pipeline falls back now, not later.
+            self.nlp("ok")
         except Exception as e:
             print(f"FinBERT init failed, falling back to keyword scorer: {e}")
             self.nlp = None
@@ -89,8 +96,11 @@ class MarketSentimentAgent:
             return final_score
 
         except Exception as e:
-            print(f"⚠️ Sentiment analiz hatası: {e}")
-            return 0.0
+            print(f"⚠️ Sentiment analiz hatası (fallback'e geçiyor): {e}")
+            try:
+                return self._analyze_with_fallback(text)
+            except Exception:
+                return 0.0
 
     def batch_analyze(self, texts: List[str]) -> List[float]:
         return [self.analyze_text(text) for text in texts]

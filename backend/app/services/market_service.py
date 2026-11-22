@@ -19,9 +19,14 @@ from src.utils.risk_manager import calculate_position_sizing, calculate_risk_met
 
 from backend.app.schemas.market import (
     Candle,
+    Fundamentals,
     Indicators,
+    MacroMetric,
+    MacroSnapshot,
+    NewsFeed,
     NewsItem,
     PositionSizing,
+    RedditPost,
     RiskMetrics,
     SignalResponse,
 )
@@ -101,6 +106,9 @@ def extract_indicators(df: pd.DataFrame) -> Indicators:
         sma50=pick("SMA50"),
         bb_upper=pick("BB_Upper"),
         bb_lower=pick("BB_Lower"),
+        stoch_k=pick("Stoch_K"),
+        stoch_d=pick("Stoch_D"),
+        volume_ratio=pick("Volume_Ratio"),
     )
 
 
@@ -154,19 +162,97 @@ def compute_sizing(df: pd.DataFrame, balance: float, confidence: float) -> Posit
     )
 
 
-def fetch_news(ticker: str, limit: int = 8) -> tuple[List[NewsItem], float]:
+def fetch_news(ticker: str, limit: int = 8, include_reddit: bool = True) -> NewsFeed:
     intel = get_intel()
-    social = intel.get_social_intelligence(ticker)
-    items = social.get("financial_news", [])[:limit]
+    social = intel.get_social_intelligence(ticker, include_reddit=include_reddit)
+
+    news_items = social.get("financial_news", [])[:limit]
     news = [
         NewsItem(
             title=n.get("title", ""),
             source=n.get("source", ""),
             link=n.get("link", ""),
             sentiment=float(n.get("sentiment", 0.0)),
-            time_ago=n.get("date"),
+            time_ago=n.get("date") or None,
         )
-        for n in items
+        for n in news_items
     ]
-    avg = sum(n.sentiment for n in news) / len(news) if news else 0.0
-    return news, avg
+
+    reddit_items = social.get("reddit_posts", [])[:limit]
+    reddit = [
+        RedditPost(
+            title=r.get("title", ""),
+            body=r.get("body", ""),
+            score=int(r.get("score", 0)),
+            comments=int(r.get("comments", 0)),
+            sub=r.get("sub", ""),
+            link=r.get("link", ""),
+            sentiment=float(r.get("sentiment", 0.0)),
+            time_ago=r.get("time_ago") or None,
+        )
+        for r in reddit_items
+    ]
+
+    pool = [n.sentiment for n in news] + [r.sentiment for r in reddit]
+    avg = sum(pool) / len(pool) if pool else 0.0
+    return NewsFeed(news=news, reddit=reddit, avg_sentiment=float(avg))
+
+
+_FUNDAMENTAL_FIELDS = {
+    "market_cap", "trailing_pe", "forward_pe", "price_to_book",
+    "profit_margin", "roe", "revenue", "revenue_growth",
+    "earnings_growth", "dividend_yield", "beta", "target_mean",
+}
+
+
+def _coerce_optional_float(val):
+    try:
+        if val is None or val == "N/A":
+            return None
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def fetch_fundamentals(ticker: str) -> Fundamentals:
+    intel = get_intel()
+    raw = intel.get_comprehensive_fundamentals(ticker) or {}
+    is_crypto = "-USD" in ticker or "-USDT" in ticker
+
+    # The raw dict uses legacy keys (e.g. "52_week_high") — remap into the schema.
+    data = dict(raw)
+    data["fifty_two_week_high"] = raw.get("52_week_high")
+    data["fifty_two_week_low"] = raw.get("52_week_low")
+
+    for f in _FUNDAMENTAL_FIELDS:
+        if f in data:
+            data[f] = _coerce_optional_float(data[f])
+    data["fifty_two_week_high"] = _coerce_optional_float(data.get("fifty_two_week_high"))
+    data["fifty_two_week_low"] = _coerce_optional_float(data.get("fifty_two_week_low"))
+    rec = data.get("recommendation")
+    data["recommendation"] = str(rec) if rec and rec != "N/A" else None
+
+    allowed = Fundamentals.model_fields.keys()
+    filtered = {k: v for k, v in data.items() if k in allowed}
+    filtered["is_crypto"] = is_crypto
+    return Fundamentals(**filtered)
+
+
+def fetch_macro_snapshot() -> MacroSnapshot:
+    intel = get_intel()
+    macro = intel.get_macro_data() or {}
+    fg = intel.get_fear_greed_index() or {}
+
+    def _metric(key: str):
+        m = macro.get(key)
+        if not m:
+            return None
+        return MacroMetric(value=float(m.get("val", 0.0)), delta=float(m.get("delta", 0.0)))
+
+    return MacroSnapshot(
+        vix=_metric("VIX"),
+        us10y=_metric("US10Y"),
+        dxy=_metric("DXY"),
+        fear_greed=float(fg["score"]) if "score" in fg else None,
+        fear_greed_label=fg.get("label"),
+    )

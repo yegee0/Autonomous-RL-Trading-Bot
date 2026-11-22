@@ -9,15 +9,21 @@ import { SignalCard } from "../components/SignalCard";
 import { RiskPanel } from "../components/RiskPanel";
 import { IndicatorStrip } from "../components/IndicatorStrip";
 import { NewsStrip } from "../components/NewsStrip";
+import { MacroStrip } from "../components/MacroStrip";
+import { OverviewPanel } from "../components/OverviewPanel";
 import { PanelSkeleton, Skeleton } from "../components/Skeleton";
 import { BacktestPanel } from "../components/BacktestPanel";
 import { PaperPanel } from "../components/PaperPanel";
+import { GuardrailStatus } from "../components/GuardrailStatus";
+import { DriftPanel } from "../components/DriftPanel";
 
-type RailTab = "signal" | "paper" | "backtest";
+type RailTab = "signal" | "overview" | "paper" | "backtest" | "risk";
 const TABS: { id: RailTab; label: string }[] = [
   { id: "signal", label: "Signal" },
+  { id: "overview", label: "Info" },
   { id: "paper", label: "Paper" },
   { id: "backtest", label: "Backtest" },
+  { id: "risk", label: "Risk" },
 ];
 
 export function Dashboard() {
@@ -34,16 +40,33 @@ export function Dashboard() {
     staleTime: 60_000,
   });
 
+  const newsQuery = useQuery({
+    queryKey: ["news", ticker],
+    queryFn: () => api.news(ticker, 10, true),
+    retry: 0,
+    staleTime: 5 * 60_000,
+  });
+
+  // Feed sentiment back into /analyze so the signal uses it.
+  const sentiment = newsQuery.data?.avg_sentiment ?? 0;
+
   const analyzeQuery = useQuery({
-    queryKey: ["analyze", ticker, tf.period, tf.interval],
-    queryFn: () => api.analyze(ticker, tf.period, tf.interval),
+    queryKey: ["analyze", ticker, tf.period, tf.interval, sentiment.toFixed(2)],
+    queryFn: () => api.analyze(ticker, tf.period, tf.interval, sentiment),
     retry: 1,
     staleTime: 30_000,
   });
 
-  const newsQuery = useQuery({
-    queryKey: ["news", ticker],
-    queryFn: () => api.news(ticker, 8),
+  const overviewQuery = useQuery({
+    queryKey: ["overview", ticker],
+    queryFn: () => api.overview(ticker),
+    retry: 0,
+    staleTime: 10 * 60_000,
+  });
+
+  const macroQuery = useQuery({
+    queryKey: ["macro"],
+    queryFn: api.macro,
     retry: 0,
     staleTime: 5 * 60_000,
   });
@@ -82,10 +105,18 @@ export function Dashboard() {
         connected={connected}
       />
 
-      <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 p-4 overflow-y-auto">
+      <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4 p-4 overflow-y-auto">
         <section className="min-w-0 flex flex-col gap-4">
+          <MacroStrip macro={macroQuery.data} loading={macroQuery.isLoading} />
+
           {data ? (
-            <PriceHeader meta={meta} ticker={ticker} price={livePrice} change24h={change24h} />
+            <PriceHeader
+              meta={meta}
+              ticker={ticker}
+              price={livePrice}
+              change24h={change24h}
+              fundamentals={overviewQuery.data}
+            />
           ) : (
             <div className="panel px-5 py-4 flex items-center justify-between">
               <Skeleton height="1.25rem" width="180px" />
@@ -125,7 +156,7 @@ export function Dashboard() {
             <IndicatorStrip indicators={data.indicators} />
           ) : (
             <div className="panel px-4 py-3 grid grid-cols-3 sm:grid-cols-6 gap-x-6 gap-y-3">
-              {Array.from({ length: 6 }).map((_, i) => (
+              {Array.from({ length: 9 }).map((_, i) => (
                 <div key={i}>
                   <Skeleton height="0.75rem" width="40%" />
                   <div className="h-1" />
@@ -136,7 +167,7 @@ export function Dashboard() {
           )}
 
           <NewsStrip
-            news={newsQuery.data ?? []}
+            feed={newsQuery.data}
             loading={newsQuery.isLoading}
             error={newsQuery.isError}
           />
@@ -163,12 +194,21 @@ export function Dashboard() {
             <>
               {railTab === "signal" && (
                 <>
-                  <SignalCard signal={data.signal} price={livePrice} />
+                  <SignalCard signal={data.signal} price={livePrice} indicators={data.indicators} />
                   <RiskPanel risk={data.risk} sizing={data.sizing} />
                 </>
               )}
+              {railTab === "overview" && (
+                <OverviewPanel info={overviewQuery.data} loading={overviewQuery.isLoading} />
+              )}
               {railTab === "paper" && <PaperPanel ticker={ticker} livePrice={livePrice} />}
               {railTab === "backtest" && <BacktestPanel ticker={ticker} />}
+              {railTab === "risk" && (
+                <>
+                  <GuardrailStatus />
+                  <DriftPanel ticker={ticker} />
+                </>
+              )}
             </>
           ) : (
             <>

@@ -18,8 +18,9 @@ def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
 
     df = ms.add_advanced_indicators(df)
 
-    # Analyze is the fast path: no news/sentiment here (frontend calls /api/news separately).
-    signal = ms.compute_signal(ticker, df, sentiment=0.0)
+    # Fast path: the frontend feeds back the sentiment it got from /api/news.
+    sentiment = float(req.sentiment or 0.0)
+    signal = ms.compute_signal(ticker, df, sentiment=sentiment)
     risk = ms.compute_risk(df)
     sizing = ms.compute_sizing(df, balance=10_000.0, confidence=max(signal.confidence, 0.5))
     indicators = ms.extract_indicators(df)
@@ -34,5 +35,5 @@ def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
         risk=risk,
         sizing=sizing,
         news=[],
-        sentiment_score=0.0,
+        sentiment_score=sentiment,
     )

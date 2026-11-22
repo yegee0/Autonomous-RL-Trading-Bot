@@ -19,6 +19,7 @@ Action space (Discrete 7, unchanged):
 from __future__ import annotations
 
 import math
+from collections import deque
 from typing import Optional
 
 import gymnasium as gym
@@ -28,7 +29,20 @@ from gymnasium import spaces
 
 OBS_DIM = 8
 INITIAL_BALANCE = 10_000.0
-COMMISSION = 0.001
+
+# ---- Trading cost model (per fill) ----
+# COMMISSION: exchange/broker fee as a fraction of notional (10 bps).
+# SPREAD_BPS: half of the bid/ask spread we cross — buys pay +, sells pay −.
+# SLIPPAGE_BPS: additional impact that scales with order size vs ATR.
+COMMISSION = 0.001           # 10 bps
+SPREAD_BPS = 2.0             # 2 bps half-spread
+SLIPPAGE_BPS_PER_ATR = 1.5   # multiplied by |frac| when size matters
+
+# Risk-adjusted reward weights. Tunable without retraining old models —
+# only affects training reward signal, not inference.
+SHARPE_WINDOW = 20           # rolling PnL window for Sharpe shaping
+SHARPE_WEIGHT = 0.05         # how much Sharpe contributes to reward
+DD_PENALTY = 0.5             # scale of drawdown penalty
 
 
 def _safe(x: float, default: float = 0.0) -> float:
@@ -92,6 +106,8 @@ class StockTradingEnv(gym.Env):
         self.balance = self.initial_balance
         self.shares_held = 0.0
         self.net_worth = self.initial_balance
+        self.peak_net_worth = self.initial_balance
+        self.ret_window: deque = deque(maxlen=SHARPE_WINDOW)
 
     def swap_frame(self, df: pd.DataFrame) -> None:
         """Replace the underlying frame; useful for multi-ticker training."""
@@ -106,7 +122,17 @@ class StockTradingEnv(gym.Env):
         self.shares_held = 0.0
         self.current_step = 0
         self.net_worth = self.initial_balance
+        self.peak_net_worth = self.initial_balance
+        self.ret_window.clear()
         return self._obs(), {}
+
+    @staticmethod
+    def _fill_price(mid: float, atr: float, frac: float, side: str) -> float:
+        """Apply spread + size-aware slippage. ``side`` is 'buy' or 'sell'."""
+        spread = SPREAD_BPS / 10_000.0
+        size_impact = (atr / max(mid, 1e-9)) * SLIPPAGE_BPS_PER_ATR * abs(frac) / 10.0
+        bps = spread + size_impact
+        return mid * (1.0 + bps if side == "buy" else 1.0 - bps)
 
     def _obs(self) -> np.ndarray:
         return build_observation(
@@ -127,15 +153,17 @@ class StockTradingEnv(gym.Env):
             frac = {1: 0.25, 2: 0.50, 3: 1.0}[action]
             spend = self.balance * frac
             if spend > 10:
+                fill = self._fill_price(price, atr, frac, "buy")
                 total = spend * (1.0 + COMMISSION)
                 if self.balance >= total:
                     self.balance -= total
-                    self.shares_held += spend / price
+                    self.shares_held += spend / fill
         elif action in (4, 5, 6):
             if self.shares_held > 0:
                 frac = {4: 0.25, 5: 0.50, 6: 1.0}[action]
                 shares_to_sell = self.shares_held * frac
-                proceeds = shares_to_sell * price * (1.0 - COMMISSION)
+                fill = self._fill_price(price, atr, frac, "sell")
+                proceeds = shares_to_sell * fill * (1.0 - COMMISSION)
                 self.shares_held -= shares_to_sell
                 self.balance += proceeds
 
@@ -146,13 +174,35 @@ class StockTradingEnv(gym.Env):
         next_price = _safe(self.df.iloc[next_idx].get("Close"), price) or price
         new_net_worth = self.balance + self.shares_held * next_price
 
-        # Reward: fractional net-worth change (unit-free) minus holding-risk penalty.
+        # ---- Risk-adjusted reward ----
+        # Base: fractional net-worth change (unit-free).
         prev_nw = self.net_worth if self.net_worth > 0 else self.initial_balance
         pnl_pct = (new_net_worth - prev_nw) / prev_nw
+        self.ret_window.append(pnl_pct)
+
+        # Rolling Sharpe shaping: reward smooth equity curves, not lucky spikes.
+        sharpe_bonus = 0.0
+        if len(self.ret_window) >= 5:
+            arr = np.asarray(self.ret_window, dtype=np.float64)
+            std = float(arr.std())
+            sharpe_bonus = SHARPE_WEIGHT * (float(arr.mean()) / std) if std > 1e-9 else 0.0
+
+        # Drawdown penalty: clip >0 so we never *reward* drawdown.
+        self.peak_net_worth = max(self.peak_net_worth, new_net_worth)
+        dd = (self.peak_net_worth - new_net_worth) / self.peak_net_worth
+        dd_cost = DD_PENALTY * dd * dd  # quadratic — mild shallow DD, biting deep DD
+
+        # Holding risk: ATR-proportional cost when exposed.
         risk_penalty = (atr / price) * 0.1 if self.shares_held > 0 else 0.0
-        reward = pnl_pct - risk_penalty
+
+        reward = pnl_pct + sharpe_bonus - dd_cost - risk_penalty
 
         self.net_worth = new_net_worth
 
-        info = {"net_worth": float(self.net_worth), "price": float(next_price)}
+        info = {
+            "net_worth": float(self.net_worth),
+            "price": float(next_price),
+            "drawdown": float(dd),
+            "sharpe_bonus": float(sharpe_bonus),
+        }
         return self._obs(), float(reward), terminated, False, info

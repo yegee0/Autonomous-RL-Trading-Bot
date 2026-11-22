@@ -12,14 +12,18 @@ from backend.app.config import settings
 from backend.app.routers import (
     analyze,
     backtest,
+    drift,
     live,
     news,
+    overview,
     paper,
     price,
     signal,
     signals_history,
     tickers,
 )
+from backend.app.services import guardrails as gr
+from backend.app.services import paper_store as ps
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FRONTEND_DIST = os.path.join(PROJECT_ROOT, "frontend_dist")
@@ -62,9 +66,26 @@ async def request_id_middleware(request: Request, call_next):
     return response
 
 
+@app.on_event("startup")
+def _init_guardrails() -> None:
+    # Snapshot equity so the daily-loss kill-switch has a baseline.
+    try:
+        positions = ps.list_positions()
+        cash = ps.get_cash()
+        equity = cash + sum(p.qty * p.avg_cost for p in positions)
+        gr.mark_day_start(equity)
+        log.info("guardrails baseline equity=%.2f", equity)
+    except Exception as e:
+        log.warning("guardrails init failed: %s", e)
+
+
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "service": "trademaster-api"}
+    return {
+        "status": "ok",
+        "service": "trademaster-api",
+        "kill_switch_active": gr.kill_switch_active(),
+    }
 
 
 app.include_router(tickers.router, prefix="/api")
@@ -75,6 +96,8 @@ app.include_router(price.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
 app.include_router(backtest.router, prefix="/api")
 app.include_router(paper.router, prefix="/api")
+app.include_router(overview.router, prefix="/api")
+app.include_router(drift.router, prefix="/api")
 app.include_router(live.router)
 
 

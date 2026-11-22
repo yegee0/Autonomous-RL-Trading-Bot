@@ -115,10 +115,14 @@ Copy `.env.example` → `.env` and fill as needed.
 |---|---|---|
 | GET  | `/api/health` | Readiness probe |
 | GET  | `/api/tickers` | Catalog + model-availability flag |
-| POST | `/api/analyze` | `{ticker, period, interval}` → full dashboard payload (fast path, news excluded) |
+| POST | `/api/analyze` | `{ticker, period, interval, sentiment}` → full dashboard payload |
 | GET  | `/api/signal/{ticker}` | AI action + confidence |
 | GET  | `/api/price/{ticker}` | OHLCV candles |
-| GET  | `/api/news/{ticker}` | Financial headlines + sentiment |
+| GET  | `/api/news/{ticker}` | Financial headlines + Reddit chatter + aggregate sentiment |
+| GET  | `/api/overview/{ticker}` | Fundamentals (market cap, P/E, margins, 52w range) |
+| GET  | `/api/macro` | VIX / US10Y / DXY / Fear & Greed snapshot |
+| GET  | `/api/backtest/{ticker}` | Replay the policy on historical bars |
+| GET  | `/api/paper/portfolio` | Paper trading portfolio + positions |
 | WS   | `/ws/live/{ticker}` | Binance kline relay (crypto pairs) |
 
 OpenAPI docs are served at `/docs`.

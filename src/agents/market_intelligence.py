@@ -6,7 +6,13 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
-from duckduckgo_search import DDGS
+
+try:
+    from duckduckgo_search import DDGS
+    _DDGS_AVAILABLE = True
+except Exception:
+    DDGS = None
+    _DDGS_AVAILABLE = False
 
 try:
     from src.agents.comprehensive_scanner import MarketSentimentAgent
@@ -18,10 +24,13 @@ except ImportError:
 
 class MarketIntelligence:
     def __init__(self):
+        # Reddit blocks generic browser UAs; a descriptive bot-style UA
+        # (per Reddit's API docs) consistently passes their rate limiter.
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'TradeMaster/0.1 (market-intelligence; +https://github.com)',
+            'Accept': 'application/json',
         }
-        self.ddgs = DDGS()
+        self.ddgs = DDGS() if _DDGS_AVAILABLE else None
         self.agent = None
         if SENTIMENT_AVAILABLE:
             try:
@@ -88,11 +97,11 @@ class MarketIntelligence:
             print(f"⚠️ Macro data error: {e}")
             return {}
 
-    def get_social_intelligence(self, ticker: str, include_reddit: bool = False,
+    def get_social_intelligence(self, ticker: str, include_reddit: bool = True,
                                 include_forums: bool = False) -> Dict:
         search_term = ticker.split("-")[0].replace(".IS", "")
 
-        financial_news = self._fetch_financial_news(search_term)
+        financial_news = self._fetch_financial_news(search_term, ticker=ticker)
         reddit_posts = self._fetch_reddit_comprehensive(search_term) if include_reddit else []
         forum_posts = self._fetch_forum_posts(search_term) if include_forums else []
 
@@ -103,147 +112,213 @@ class MarketIntelligence:
             "forum_posts": forum_posts,
         }
 
-    def _fetch_financial_news(self, term: str, limit: int = 10) -> list:
-        news = []
-        sources = [
-            f"{term} stock market news",
-            f"{term} price forecast",
-        ]
+    def _fetch_financial_news(self, term: str, limit: int = 10, ticker: Optional[str] = None) -> list:
+        """Headlines pipeline: yfinance (reliable) → DDGS fallback. Dedupes by title."""
+        news: list = []
+        seen_headlines: set = set()
 
-        try:
-            seen_headlines = set()
+        # ---- 1. yfinance Ticker().news is the reliable primary source. ----
+        if ticker:
+            try:
+                yf_items = yf.Ticker(ticker).news or []
+            except Exception as e:
+                print(f"  ⚠️ yfinance news error ({ticker}): {e}")
+                yf_items = []
 
+            for item in yf_items:
+                if len(news) >= limit:
+                    break
+                # yfinance normalises as {content: {...}} in newer versions, flat in older.
+                content = item.get("content") if isinstance(item.get("content"), dict) else item
+                title = content.get("title") or item.get("title") or ""
+                if not title:
+                    continue
+                key = title.lower().strip()
+                if key in seen_headlines:
+                    continue
+                seen_headlines.add(key)
+
+                publisher = (
+                    content.get("provider", {}).get("displayName")
+                    if isinstance(content.get("provider"), dict)
+                    else content.get("publisher") or item.get("publisher") or "Yahoo Finance"
+                )
+                link = (
+                    content.get("canonicalUrl", {}).get("url")
+                    if isinstance(content.get("canonicalUrl"), dict)
+                    else content.get("link") or item.get("link") or ""
+                )
+                pub_ts = content.get("pubDate") or item.get("providerPublishTime")
+                date_str = self._format_pub_date(pub_ts)
+
+                news.append({
+                    'title': title,
+                    'source': str(publisher),
+                    'date': date_str,
+                    'link': link,
+                    'sentiment': self._score_text(title),
+                    'type': 'Financial News',
+                })
+
+        # ---- 2. DDGS fallback — only if yfinance came back light. ----
+        if len(news) < limit and self.ddgs is not None:
+            sources = [
+                f"{term} stock market news",
+                f"{term} price forecast",
+            ]
             for query in sources:
                 if len(news) >= limit:
                     break
-
                 try:
                     results = self.ddgs.news(
                         keywords=query,
                         region="wt-wt",
                         safesearch="off",
-                        max_results=5
+                        max_results=5,
                     )
-
-                    if not results:
-                        continue
-
-                    for item in results:
-                        if len(news) >= limit:
-                            break
-
-                        title = item.get('title', '')
-                        source = item.get('source', 'Financial News')
-                        date = item.get('date', '')
-                        link = item.get('url', '')
-
-                        title_clean = title.lower().strip()
-                        if title_clean in seen_headlines or not title:
-                            continue
-
-                        seen_headlines.add(title_clean)
-                        sentiment = self._score_text(title)
-
-                        news.append({
-                            'title': title,
-                            'source': source,
-                            'date': date,
-                            'link': link,
-                            'sentiment': sentiment,
-                            'type': 'Financial News'
-                        })
-
-                except Exception:
+                except Exception as e:
+                    print(f"  ⚠️ DDGS news error: {e}")
                     continue
 
-                time.sleep(0.3)
-
-        except Exception as e:
-            print(f"  ⚠️ News scan error: {e}")
+                for item in results or []:
+                    if len(news) >= limit:
+                        break
+                    title = item.get('title', '')
+                    key = title.lower().strip()
+                    if not title or key in seen_headlines:
+                        continue
+                    seen_headlines.add(key)
+                    news.append({
+                        'title': title,
+                        'source': item.get('source', 'Financial News'),
+                        'date': item.get('date', ''),
+                        'link': item.get('url', ''),
+                        'sentiment': self._score_text(title),
+                        'type': 'Financial News',
+                    })
+                time.sleep(0.2)
 
         return news[:limit]
 
+    def _format_pub_date(self, ts) -> str:
+        if ts is None:
+            return ''
+        try:
+            if isinstance(ts, (int, float)):
+                dt = datetime.fromtimestamp(float(ts))
+            elif isinstance(ts, str):
+                # ISO-8601 from newer yfinance.
+                clean = ts.replace("Z", "+00:00")
+                dt = datetime.fromisoformat(clean)
+                dt = dt.replace(tzinfo=None)
+            else:
+                return str(ts)
+            return self._format_time_ago(dt)
+        except Exception:
+            return str(ts)
+
     def _fetch_reddit_comprehensive(self, term: str, limit: int = 10) -> list:
+        """Reddit search across finance/crypto subs. Also does an r/all fallback
+        when per-sub search is empty, since many tickers (BTC, SOL) are mostly
+        discussed outside the restricted subs listed here."""
         posts: list = []
-        subreddits = ["wallstreetbets", "stocks", "cryptocurrency", "stockmarket"]
         seen_ids: set = set()
+        subreddits = [
+            "wallstreetbets", "stocks", "cryptocurrency",
+            "stockmarket", "investing", "CryptoMarkets",
+        ]
 
         for sub in subreddits:
             if len(posts) >= limit:
                 break
             try:
                 posts.extend(self._fetch_reddit_subreddit(sub, term, "hot", seen_ids))
-            except Exception:
+            except Exception as e:
+                print(f"  ⚠️ reddit/{sub} error: {e}")
                 continue
+
+        if not posts:
+            try:
+                posts.extend(self._fetch_reddit_all(term, "relevance", seen_ids, limit=limit))
+            except Exception as e:
+                print(f"  ⚠️ reddit/all error: {e}")
 
         posts.sort(key=lambda x: x.get("score", 0), reverse=True)
         return posts[:limit]
 
     def _fetch_reddit_subreddit(self, subreddit: str, term: str, sort: str, seen_ids: set) -> list:
-        posts = []
+        # old.reddit.com is far less aggressive with automated clients than www.
+        url = f"https://old.reddit.com/r/{subreddit}/search.json"
+        params = {
+            'q': term,
+            'sort': sort,
+            'limit': 15,
+            'restrict_sr': 'on',
+            't': 'week',
+            'raw_json': 1,
+        }
+        return self._reddit_request(url, params, seen_ids, subreddit=subreddit)
 
+    def _fetch_reddit_all(self, term: str, sort: str, seen_ids: set, limit: int = 10) -> list:
+        url = "https://old.reddit.com/search.json"
+        params = {
+            'q': term,
+            'sort': sort,
+            'limit': max(limit, 10),
+            't': 'week',
+            'raw_json': 1,
+        }
+        return self._reddit_request(url, params, seen_ids, subreddit=None)
+
+    def _reddit_request(self, url: str, params: dict, seen_ids: set, subreddit: Optional[str]) -> list:
+        posts: list = []
         try:
-            url = f"https://www.reddit.com/r/{subreddit}/search.json"
-            params = {
-                'q': term,
-                'sort': sort,
-                'limit': 15,
-                'restrict_sr': 'true',
-                't': 'week'
-            }
-
-            resp = requests.get(url, params=params, headers=self.headers, timeout=5)
-
+            resp = requests.get(url, params=params, headers=self.headers, timeout=6)
             if resp.status_code != 200:
+                print(f"  ⚠️ reddit {resp.status_code} for {subreddit or 'all'}")
                 return posts
 
-            data = resp.json().get('data', {}).get('children', [])
-
-            for post in data:
+            children = resp.json().get('data', {}).get('children', [])
+            for post in children:
                 try:
-                    p_data = post.get('data', {})
-                    post_id = p_data.get('id', '')
-
-                    if post_id in seen_ids:
+                    p = post.get('data', {})
+                    post_id = p.get('id', '')
+                    if not post_id or post_id in seen_ids:
                         continue
 
-                    title = p_data.get('title', '')
-                    body = p_data.get('selftext', '')[:300]
-                    score = p_data.get('score', 0)
-                    num_comments = p_data.get('num_comments', 0)
-                    permalink = p_data.get('permalink', '')
-                    created_utc = p_data.get('created_utc', 0)
+                    title = p.get('title', '')
+                    body = (p.get('selftext') or '')[:300]
+                    score = p.get('score', 0)
+                    num_comments = p.get('num_comments', 0)
+                    permalink = p.get('permalink', '')
+                    created_utc = p.get('created_utc', 0)
+                    sub = p.get('subreddit', subreddit or 'reddit')
 
-                    if not title or score < 5:
+                    if not title:
+                        continue
+                    if subreddit is not None and score < 5:
                         continue
 
                     seen_ids.add(post_id)
-
-                    full_text = f"{title} {body}"
-                    sentiment = self._score_text(full_text)
-
+                    sentiment = self._score_text(f"{title} {body}")
                     created_time = datetime.fromtimestamp(created_utc) if created_utc else datetime.now()
-                    time_ago = self._format_time_ago(created_time)
 
                     posts.append({
                         'title': title,
                         'body': body if body else 'No description',
                         'score': score,
                         'comments': num_comments,
-                        'sub': subreddit,
+                        'sub': sub,
                         'link': f"https://reddit.com{permalink}",
                         'sentiment': sentiment,
                         'type': 'Reddit',
-                        'time_ago': time_ago,
-                        'icon': '🔴'
+                        'time_ago': self._format_time_ago(created_time),
+                        'icon': 'reddit',
                     })
-
                 except Exception:
                     continue
-
-        except Exception:
-            pass
-
+        except Exception as e:
+            print(f"  ⚠️ reddit http error: {e}")
         return posts
 
     def _format_time_ago(self, dt: datetime) -> str:
@@ -261,6 +336,8 @@ class MarketIntelligence:
 
     def _fetch_forum_posts(self, term: str, limit: int = 5) -> list:
         posts = []
+        if self.ddgs is None:
+            return posts
 
         try:
             queries = [

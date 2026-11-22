@@ -36,6 +36,9 @@ export interface Indicators {
   sma50?: number | null;
   bb_upper?: number | null;
   bb_lower?: number | null;
+  stoch_k?: number | null;
+  stoch_d?: number | null;
+  volume_ratio?: number | null;
 }
 
 export interface SignalResponse {
@@ -72,6 +75,61 @@ export interface NewsItem {
   link: string;
   sentiment: number;
   time_ago?: string | null;
+}
+
+export interface RedditPost {
+  title: string;
+  body?: string;
+  score: number;
+  comments: number;
+  sub: string;
+  link: string;
+  sentiment: number;
+  time_ago?: string | null;
+}
+
+export interface NewsFeed {
+  news: NewsItem[];
+  reddit: RedditPost[];
+  avg_sentiment: number;
+}
+
+export interface MacroMetric {
+  value: number;
+  delta: number;
+}
+
+export interface MacroSnapshot {
+  vix?: MacroMetric | null;
+  us10y?: MacroMetric | null;
+  dxy?: MacroMetric | null;
+  fear_greed?: number | null;
+  fear_greed_label?: string | null;
+}
+
+export interface Fundamentals {
+  company_name?: string | null;
+  sector?: string | null;
+  industry?: string | null;
+  description?: string | null;
+  website?: string | null;
+  country?: string | null;
+  market_cap?: number | null;
+  trailing_pe?: number | null;
+  forward_pe?: number | null;
+  price_to_book?: number | null;
+  profit_margin?: number | null;
+  roe?: number | null;
+  revenue?: number | null;
+  revenue_growth?: number | null;
+  earnings_growth?: number | null;
+  dividend_yield?: number | null;
+  beta?: number | null;
+  fifty_two_week_high?: number | null;
+  fifty_two_week_low?: number | null;
+  target_mean?: number | null;
+  recommendation?: string | null;
+  is_crypto: boolean;
 }
 
 export interface AnalyzeResponse {
@@ -142,4 +200,51 @@ export interface PaperPortfolio {
   positions: PaperPosition[];
   total_market_value: number;
   total_equity: number;
+}
+
+export interface GuardrailSnapshot {
+  kill_switch_active: boolean;
+  kill_switch_file: string;
+  kill_switch_file_exists: boolean;
+  daily_loss_tripped: boolean;
+  day_start_equity: number;
+  day_key: string | null;
+  rate_hits_in_window: number;
+  rate_limit_max: number;
+  rate_limit_window_s: number;
+  limits: {
+    max_position_pct: number;
+    max_order_pct: number;
+    max_daily_loss_pct: number;
+    rsi_buy_block: number;
+    rsi_sell_block: number;
+  };
+}
+
+export interface DriftReport {
+  ok: boolean;
+  reason?: string;
+  ticker?: string;
+  bars?: number;
+  drift_score?: number;
+  level?: "ok" | "watch" | "retrain";
+  return_drift?: number;
+  policy_drift?: number;
+  pnl_drift?: number;
+  baseline?: {
+    mean: number;
+    std: number;
+    skew: number;
+    buy_pct: number;
+    sell_pct: number;
+    total_return: number;
+  };
+  recent?: {
+    mean: number;
+    std: number;
+    skew: number;
+    buy_pct: number;
+    sell_pct: number;
+    total_return: number;
+  };
 }
