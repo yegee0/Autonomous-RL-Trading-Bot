@@ -13,6 +13,7 @@ import type {
   OnChain,
   PaperPortfolio,
   PaperTrade,
+  PortfolioRiskReport,
   SignalResponse,
   TickerMeta,
 } from "./types";
@@ -138,6 +139,11 @@ export const api = {
     const { data } = await http.get<CalendarResponse>(`/calendar`, {
       params: { ticker, hours_ahead: hoursAhead },
     });
+    return data;
+  },
+
+  async portfolioRisk(): Promise<PortfolioRiskReport> {
+    const { data } = await http.get<PortfolioRiskReport>(`/paper/risk`);
     return data;
   },
 };

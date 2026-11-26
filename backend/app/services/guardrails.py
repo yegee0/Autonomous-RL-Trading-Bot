@@ -50,6 +50,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 MAX_POSITION_PCT = _env_float("MAX_POSITION_PCT", 0.20)      # 20% of equity in one ticker
 MAX_ORDER_PCT = _env_float("MAX_ORDER_PCT", 0.10)            # 10% of equity per order
 MAX_DAILY_LOSS_PCT = _env_float("MAX_DAILY_LOSS_PCT", 0.05)  # 5% daily loss → kill
+MAX_PORTFOLIO_EXPOSURE_PCT = _env_float("MAX_PORTFOLIO_EXPOSURE_PCT", 0.60)  # gross cap across all positions
 TRADE_RATE_MAX = _env_int("TRADE_RATE_LIMIT", 10)            # orders per window
 TRADE_RATE_WINDOW_S = _env_int("TRADE_RATE_WINDOW", 60)
 KILL_SWITCH_FILE = os.getenv(
@@ -197,6 +198,29 @@ def check_order(
                 "POSITION_CAP",
             )
 
+    # 6.5) Portfolio-wide gross exposure cap — stops piling into a correlated basket.
+    if side == "buy" and MAX_PORTFOLIO_EXPOSURE_PCT > 0:
+        try:
+            from backend.app.services import paper_store as _ps
+            from src.utils.portfolio_risk import PositionSnapshot, would_breach_exposure
+            open_pos = [
+                PositionSnapshot(ticker=p.ticker, qty=p.qty, price=p.avg_cost)
+                for p in _ps.list_positions()
+                if p.ticker != ticker
+            ]
+            breach, projected, _ = would_breach_exposure(
+                open_pos, _ps.get_cash(), extra_notional=notional,
+                ticker=ticker, cap_pct=MAX_PORTFOLIO_EXPOSURE_PCT,
+            )
+            if breach:
+                return GuardrailDecision(
+                    False,
+                    f"Portfolio gross exposure would reach {projected:.1%} > cap {MAX_PORTFOLIO_EXPOSURE_PCT:.0%}",
+                    "PORTFOLIO_EXPOSURE_CAP",
+                )
+        except Exception as e:
+            log.debug("portfolio exposure check skipped: %s", e)
+
     # 7) Macro event window — block new buys around FOMC/CPI/earnings.
     if EVENT_WINDOW_LOCK and side == "buy":
         try:
@@ -253,6 +277,7 @@ def snapshot() -> dict:
             "max_position_pct": MAX_POSITION_PCT,
             "max_order_pct": MAX_ORDER_PCT,
             "max_daily_loss_pct": MAX_DAILY_LOSS_PCT,
+            "max_portfolio_exposure_pct": MAX_PORTFOLIO_EXPOSURE_PCT,
             "rsi_buy_block": RSI_BUY_BLOCK,
             "rsi_sell_block": RSI_SELL_BLOCK,
         },

@@ -16,6 +16,7 @@ import { BacktestPanel } from "../components/BacktestPanel";
 import { PaperPanel } from "../components/PaperPanel";
 import { GuardrailStatus } from "../components/GuardrailStatus";
 import { DriftPanel } from "../components/DriftPanel";
+import { PortfolioRiskCard } from "../components/PortfolioRiskCard";
 import { OnChainCard } from "../components/OnChainCard";
 import { OrderBook } from "../components/OrderBook";
 import { LiquidationFeed } from "../components/LiquidationFeed";
@@ -219,6 +220,7 @@ export function Dashboard() {
               {railTab === "risk" && (
                 <>
                   <GuardrailStatus />
+                  <PortfolioRiskCard />
                   <DriftPanel ticker={ticker} />
                 </>
               )}

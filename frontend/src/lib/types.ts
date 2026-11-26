@@ -249,6 +249,21 @@ export interface CalendarResponse {
   active_event: CalendarEvent | null;
 }
 
+export interface PortfolioRiskReport {
+  equity: number;
+  cash: number;
+  market_value: number;
+  gross_exposure_pct: number;
+  net_exposure_pct: number;
+  concentration_pct: number;
+  var_95_parametric: number;
+  var_95_historical: number;
+  portfolio_vol_annualized: number;
+  correlations: Record<string, Record<string, number>>;
+  tickers: string[];
+  warnings: string[];
+}
+
 export interface DriftReport {
   ok: boolean;
   reason?: string;
