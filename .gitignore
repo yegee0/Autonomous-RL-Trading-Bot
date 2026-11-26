@@ -41,5 +41,11 @@ Thumbs.db
 *.log
 logs/
 
+# Paper-trading SQLite ledger (runtime state)
+paper.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # Hugging Face cache
 .cache/
