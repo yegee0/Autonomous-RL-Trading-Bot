@@ -3,12 +3,14 @@ import type {
   AnalyzeResponse,
   BacktestMarker,
   BacktestReport,
+  CalendarResponse,
   Candle,
   DriftReport,
   Fundamentals,
   GuardrailSnapshot,
   MacroSnapshot,
   NewsFeed,
+  OnChain,
   PaperPortfolio,
   PaperTrade,
   SignalResponse,
@@ -123,6 +125,18 @@ export const api = {
     const { data } = await http.get<DriftReport>(`/drift/${ticker}`, {
       params: { period, interval },
       timeout: 120_000,
+    });
+    return data;
+  },
+
+  async onchain(ticker: string): Promise<OnChain> {
+    const { data } = await http.get<OnChain>(`/onchain/${ticker}`);
+    return data;
+  },
+
+  async calendar(ticker?: string, hoursAhead = 168): Promise<CalendarResponse> {
+    const { data } = await http.get<CalendarResponse>(`/calendar`, {
+      params: { ticker, hours_ahead: hoursAhead },
     });
     return data;
   },

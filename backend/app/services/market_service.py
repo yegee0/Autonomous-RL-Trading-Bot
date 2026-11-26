@@ -13,6 +13,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from src.agents.rl_agent import calculate_fallback_signal, get_ai_action, load_agent  # noqa: E402
+from src.agents.ensemble import predict_with_ensemble  # noqa: E402
 from src.agents.market_intelligence import MarketIntelligence  # noqa: E402
 from src.utils.technical_indicators import add_advanced_indicators  # noqa: E402
 from src.utils.risk_manager import calculate_position_sizing, calculate_risk_metrics  # noqa: E402
@@ -116,18 +117,34 @@ def compute_signal(ticker: str, df: pd.DataFrame, sentiment: float) -> SignalRes
     if df is None or df.empty:
         raise ValueError(f"No usable data to score signal for {ticker}")
     current_price = float(df.iloc[-1]["Close"])
-    model, _ = load_agent(ticker)
-    source = "ppo" if model else "fallback"
 
-    if model:
-        try:
-            action, confidence = get_ai_action(ticker, current_price, sentiment)
-        except Exception as e:
-            print(f"[signal] PPO inference failed, falling back: {e}")
-            action, confidence = calculate_fallback_signal(df, sentiment)
+    # Pull VIX for the regime classifier. Cheap — cached inside MarketIntelligence.
+    vix = None
+    try:
+        macro = get_intel().get_macro_data() or {}
+        vix_entry = macro.get("VIX")
+        if vix_entry:
+            vix = float(vix_entry.get("val"))
+    except Exception:
+        vix = None
+
+    try:
+        action, confidence, meta = predict_with_ensemble(
+            ticker, current_price, sentiment, vix=vix
+        )
+        source_raw = meta.get("source", "")
+        regime = meta.get("regime")
+        expert = meta.get("expert")
+        if expert and expert != "rule":
+            source = "ensemble"
+        elif "rule" in source_raw:
             source = "fallback"
-    else:
+        else:
+            source = "ppo"
+    except Exception as e:
+        print(f"[signal] ensemble failed, hard fallback: {e}")
         action, confidence = calculate_fallback_signal(df, sentiment)
+        regime, expert, source = None, None, "fallback"
 
     action = int(action)
     direction = "long" if action in (1, 2, 3) else "short" if action in (4, 5, 6) else "flat"
@@ -141,6 +158,8 @@ def compute_signal(ticker: str, df: pd.DataFrame, sentiment: float) -> SignalRes
         source=source,
         sentiment=float(sentiment),
         price=current_price,
+        regime=regime,
+        expert=expert,
     )
 
 

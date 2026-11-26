@@ -16,11 +16,16 @@ import { BacktestPanel } from "../components/BacktestPanel";
 import { PaperPanel } from "../components/PaperPanel";
 import { GuardrailStatus } from "../components/GuardrailStatus";
 import { DriftPanel } from "../components/DriftPanel";
+import { OnChainCard } from "../components/OnChainCard";
+import { OrderBook } from "../components/OrderBook";
+import { LiquidationFeed } from "../components/LiquidationFeed";
+import { CalendarCard } from "../components/CalendarCard";
 
-type RailTab = "signal" | "overview" | "paper" | "backtest" | "risk";
+type RailTab = "signal" | "overview" | "flow" | "paper" | "backtest" | "risk";
 const TABS: { id: RailTab; label: string }[] = [
   { id: "signal", label: "Signal" },
   { id: "overview", label: "Info" },
+  { id: "flow", label: "Flow" },
   { id: "paper", label: "Paper" },
   { id: "backtest", label: "Backtest" },
   { id: "risk", label: "Risk" },
@@ -203,6 +208,14 @@ export function Dashboard() {
               )}
               {railTab === "paper" && <PaperPanel ticker={ticker} livePrice={livePrice} />}
               {railTab === "backtest" && <BacktestPanel ticker={ticker} />}
+              {railTab === "flow" && (
+                <>
+                  <CalendarCard ticker={ticker} />
+                  <OnChainCard ticker={ticker} enabled={isCrypto} />
+                  <OrderBook ticker={ticker} enabled={isCrypto} />
+                  <LiquidationFeed ticker={ticker} enabled={isCrypto} />
+                </>
+              )}
               {railTab === "risk" && (
                 <>
                   <GuardrailStatus />

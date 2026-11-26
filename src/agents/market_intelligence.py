@@ -24,12 +24,23 @@ except ImportError:
 
 class MarketIntelligence:
     def __init__(self):
+        import os as _os
         # Reddit blocks generic browser UAs; a descriptive bot-style UA
         # (per Reddit's API docs) consistently passes their rate limiter.
         self.headers = {
-            'User-Agent': 'TradeMaster/0.1 (market-intelligence; +https://github.com)',
+            'User-Agent': _os.getenv(
+                "REDDIT_USER_AGENT",
+                "TradeMaster/0.1 (market-intelligence; +https://github.com)",
+            ),
             'Accept': 'application/json',
         }
+        # Optional Reddit OAuth app — set REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET
+        # to use authenticated endpoints. Anonymous access has been locked since
+        # late 2024 for most non-residential IPs.
+        self._reddit_cid = _os.getenv("REDDIT_CLIENT_ID", "")
+        self._reddit_sec = _os.getenv("REDDIT_CLIENT_SECRET", "")
+        self._reddit_token: Optional[str] = None
+        self._reddit_token_exp: float = 0.0
         self.ddgs = DDGS() if _DDGS_AVAILABLE else None
         self.agent = None
         if SENTIMENT_AVAILABLE:
@@ -270,12 +281,45 @@ class MarketIntelligence:
         }
         return self._reddit_request(url, params, seen_ids, subreddit=None)
 
+    def _reddit_oauth_token(self) -> Optional[str]:
+        """App-only OAuth (client-credentials). Returns a bearer token or None."""
+        if not (self._reddit_cid and self._reddit_sec):
+            return None
+        if self._reddit_token and time.time() < self._reddit_token_exp - 60:
+            return self._reddit_token
+        try:
+            r = requests.post(
+                "https://www.reddit.com/api/v1/access_token",
+                auth=(self._reddit_cid, self._reddit_sec),
+                data={"grant_type": "client_credentials"},
+                headers={"User-Agent": self.headers["User-Agent"]},
+                timeout=6,
+            )
+            if r.status_code != 200:
+                return None
+            data = r.json()
+            self._reddit_token = data.get("access_token")
+            self._reddit_token_exp = time.time() + int(data.get("expires_in", 3600))
+            return self._reddit_token
+        except Exception as e:
+            print(f"  ⚠️ reddit oauth error: {e}")
+            return None
+
     def _reddit_request(self, url: str, params: dict, seen_ids: set, subreddit: Optional[str]) -> list:
         posts: list = []
+        # If OAuth creds are set, switch to oauth.reddit.com.
+        token = self._reddit_oauth_token()
+        headers = dict(self.headers)
+        if token:
+            url = url.replace("https://old.reddit.com", "https://oauth.reddit.com")
+            url = url.replace("https://www.reddit.com", "https://oauth.reddit.com")
+            headers["Authorization"] = f"bearer {token}"
+
         try:
-            resp = requests.get(url, params=params, headers=self.headers, timeout=6)
+            resp = requests.get(url, params=params, headers=headers, timeout=6)
             if resp.status_code != 200:
-                print(f"  ⚠️ reddit {resp.status_code} for {subreddit or 'all'}")
+                print(f"  ⚠️ reddit {resp.status_code} for {subreddit or 'all'}"
+                      + (" (set REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET)" if not token else ""))
                 return posts
 
             children = resp.json().get('data', {}).get('children', [])

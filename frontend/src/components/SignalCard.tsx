@@ -32,10 +32,31 @@ export function SignalCard({ signal, price, indicators }: Props) {
       <div className="flex items-center justify-between">
         <span className="label">Signal</span>
         <div className="flex items-center gap-1 text-fg-muted">
-          {signal.source === "ppo" ? <Cpu size={12} /> : <Activity size={12} />}
-          <span className="text-2xs uppercase tracking-wider">{signal.source}</span>
+          {signal.source === "fallback" ? <Activity size={12} /> : <Cpu size={12} />}
+          <span className="text-2xs uppercase tracking-wider">
+            {signal.source === "ensemble" && signal.expert
+              ? `ensemble · ${signal.expert}`
+              : signal.source}
+          </span>
         </div>
       </div>
+
+      {signal.regime && (
+        <div className="flex items-center gap-2">
+          <span className="label">Regime</span>
+          <span
+            className={`text-2xs uppercase tracking-wider font-semibold ${
+              signal.regime === "crisis"
+                ? "text-accent-short"
+                : signal.regime === "trend"
+                ? "text-accent-long"
+                : "text-accent-neutral"
+            }`}
+          >
+            {signal.regime}
+          </span>
+        </div>
+      )}
 
       <div className="flex items-baseline gap-3">
         <Icon size={28} strokeWidth={1.5} className={accent} />

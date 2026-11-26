@@ -57,6 +57,7 @@ KILL_SWITCH_FILE = os.getenv(
 )
 RSI_BUY_BLOCK = _env_float("RSI_BUY_BLOCK", 85.0)            # refuse buy if RSI >= this
 RSI_SELL_BLOCK = _env_float("RSI_SELL_BLOCK", 15.0)          # refuse short/sell if RSI <= this
+EVENT_WINDOW_LOCK = os.getenv("EVENT_WINDOW_LOCK", "1") not in ("0", "", "false")
 
 
 # ---- Rate limiter (sliding window, in-memory) ------------------------------
@@ -196,7 +197,21 @@ def check_order(
                 "POSITION_CAP",
             )
 
-    # 7) Overbought / oversold filter (defensive, NOT contrarian).
+    # 7) Macro event window — block new buys around FOMC/CPI/earnings.
+    if EVENT_WINDOW_LOCK and side == "buy":
+        try:
+            from backend.app.services import calendar_service as _cal
+            ev = _cal.in_event_window(ticker=ticker)
+            if ev is not None:
+                return GuardrailDecision(
+                    False,
+                    f"Within ±30m of {ev.name}; new buys locked",
+                    "EVENT_WINDOW",
+                )
+        except Exception as e:
+            log.debug("event-window check skipped: %s", e)
+
+    # 8) Overbought / oversold filter (defensive, NOT contrarian).
     if rsi is not None:
         if side == "buy" and rsi >= RSI_BUY_BLOCK:
             return GuardrailDecision(
@@ -233,6 +248,7 @@ def snapshot() -> dict:
         "rate_hits_in_window": len(hits),
         "rate_limit_max": TRADE_RATE_MAX,
         "rate_limit_window_s": TRADE_RATE_WINDOW_S,
+        "event_window_lock": EVENT_WINDOW_LOCK,
         "limits": {
             "max_position_pct": MAX_POSITION_PCT,
             "max_order_pct": MAX_ORDER_PCT,

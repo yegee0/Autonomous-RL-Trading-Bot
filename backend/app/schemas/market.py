@@ -32,9 +32,11 @@ class SignalResponse(BaseModel):
     action_label: Literal["HOLD", "BUY_25", "BUY_50", "BUY_100", "SELL_25", "SELL_50", "SELL_100"]
     confidence: float = Field(..., ge=0.0, le=1.0)
     direction: Literal["long", "short", "flat"]
-    source: Literal["ppo", "fallback"]
+    source: Literal["ppo", "fallback", "ensemble"]
     sentiment: float = 0.0
     price: float
+    regime: Optional[str] = None          # "trend" | "range" | "crisis" when ensemble picked one
+    expert: Optional[str] = None          # name of the expert head that ran
 
 
 class RiskMetrics(BaseModel):

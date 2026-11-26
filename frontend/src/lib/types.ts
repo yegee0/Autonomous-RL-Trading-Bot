@@ -47,9 +47,11 @@ export interface SignalResponse {
   action_label: ActionLabel;
   confidence: number;
   direction: Direction;
-  source: "ppo" | "fallback";
+  source: "ppo" | "fallback" | "ensemble";
   sentiment: number;
   price: number;
+  regime?: "trend" | "range" | "crisis" | null;
+  expert?: string | null;
 }
 
 export interface RiskMetrics {
@@ -219,6 +221,32 @@ export interface GuardrailSnapshot {
     rsi_buy_block: number;
     rsi_sell_block: number;
   };
+}
+
+export interface OnChain {
+  symbol: string;
+  funding_rate: number | null;
+  funding_annualized: number | null;
+  next_funding_time: number | null;
+  mark_price: number | null;
+  open_interest: number | null;
+  open_interest_usd: number | null;
+  oi_change_24h: number | null;
+  crowded_side: "long" | "short" | "neutral" | null;
+}
+
+export interface CalendarEvent {
+  ts: number;
+  name: string;
+  impact: "high" | "medium" | "low" | string;
+  affects: string;
+  source: "macro" | "earnings" | string;
+}
+
+export interface CalendarResponse {
+  events: CalendarEvent[];
+  event_window_active: boolean;
+  active_event: CalendarEvent | null;
 }
 
 export interface DriftReport {

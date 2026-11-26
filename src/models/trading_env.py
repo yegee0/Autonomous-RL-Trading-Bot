@@ -40,9 +40,18 @@ SLIPPAGE_BPS_PER_ATR = 1.5   # multiplied by |frac| when size matters
 
 # Risk-adjusted reward weights. Tunable without retraining old models —
 # only affects training reward signal, not inference.
-SHARPE_WINDOW = 20           # rolling PnL window for Sharpe shaping
-SHARPE_WEIGHT = 0.05         # how much Sharpe contributes to reward
-DD_PENALTY = 0.5             # scale of drawdown penalty
+#
+# Earlier version was too fearful (quadratic DD + ATR penalty every bar) which
+# taught the policy to stay in cash through strong rallies. Rebalanced:
+#   • DD penalty: linear instead of quadratic (deep DD still hurts, shallow DD is fine)
+#   • Sharpe bonus: bumped up a little, rewards smooth equity curves
+#   • Holding cost: only when actually long AND volatility is spiking
+#   • Opportunity cost: tiny negative reward when flat during a visible uptrend
+SHARPE_WINDOW = 20
+SHARPE_WEIGHT = 0.10
+DD_PENALTY = 0.25
+HOLDING_PENALTY = 0.03      # fraction of ATR/price applied only when long
+OPPORTUNITY_COST = 0.08     # fraction of positive 1-bar return when flat during an uptrend
 
 
 def _safe(x: float, default: float = 0.0) -> float:
@@ -175,27 +184,46 @@ class StockTradingEnv(gym.Env):
         new_net_worth = self.balance + self.shares_held * next_price
 
         # ---- Risk-adjusted reward ----
-        # Base: fractional net-worth change (unit-free).
         prev_nw = self.net_worth if self.net_worth > 0 else self.initial_balance
         pnl_pct = (new_net_worth - prev_nw) / prev_nw
         self.ret_window.append(pnl_pct)
 
-        # Rolling Sharpe shaping: reward smooth equity curves, not lucky spikes.
+        # Rolling Sharpe shaping: rewards smooth equity curves, not lucky spikes.
         sharpe_bonus = 0.0
         if len(self.ret_window) >= 5:
             arr = np.asarray(self.ret_window, dtype=np.float64)
             std = float(arr.std())
             sharpe_bonus = SHARPE_WEIGHT * (float(arr.mean()) / std) if std > 1e-9 else 0.0
 
-        # Drawdown penalty: clip >0 so we never *reward* drawdown.
+        # Drawdown penalty — LINEAR now. Shallow DD costs nothing meaningful;
+        # 20% DD costs 0.05 per bar which keeps the agent honest without
+        # training it to flee to cash at the first red bar.
         self.peak_net_worth = max(self.peak_net_worth, new_net_worth)
-        dd = (self.peak_net_worth - new_net_worth) / self.peak_net_worth
-        dd_cost = DD_PENALTY * dd * dd  # quadratic — mild shallow DD, biting deep DD
+        dd = (self.peak_net_worth - new_net_worth) / max(self.peak_net_worth, 1e-6)
+        dd_cost = DD_PENALTY * dd
 
-        # Holding risk: ATR-proportional cost when exposed.
-        risk_penalty = (atr / price) * 0.1 if self.shares_held > 0 else 0.0
+        # Holding cost only when BOTH exposed AND ATR is high — cheap during
+        # calm bull markets, pricier during chop.
+        if self.shares_held > 0:
+            vol_ratio = atr / max(price, 1e-6)
+            holding_cost = HOLDING_PENALTY * vol_ratio
+        else:
+            holding_cost = 0.0
 
-        reward = pnl_pct + sharpe_bonus - dd_cost - risk_penalty
+        # Opportunity cost: tiny penalty for being flat during a clear uptrend.
+        # Measured as positive 5-bar momentum; discourages the "always HOLD"
+        # degenerate strategy that the previous reward recipe encouraged.
+        opp_cost = 0.0
+        if self.shares_held <= 0 and self.current_step >= 5 and idx >= 5:
+            try:
+                past = _safe(self.df.iloc[idx - 5]["Close"], price) or price
+                mom = (price - past) / past
+                if mom > 0.005:  # 0.5% up over 5 bars
+                    opp_cost = OPPORTUNITY_COST * mom
+            except Exception:
+                pass
+
+        reward = pnl_pct + sharpe_bonus - dd_cost - holding_cost - opp_cost
 
         self.net_worth = new_net_worth
 
@@ -204,5 +232,6 @@ class StockTradingEnv(gym.Env):
             "price": float(next_price),
             "drawdown": float(dd),
             "sharpe_bonus": float(sharpe_bonus),
+            "opp_cost": float(opp_cost),
         }
         return self._obs(), float(reward), terminated, False, info

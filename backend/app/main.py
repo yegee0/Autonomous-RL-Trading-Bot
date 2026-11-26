@@ -12,9 +12,11 @@ from backend.app.config import settings
 from backend.app.routers import (
     analyze,
     backtest,
+    calendar,
     drift,
     live,
     news,
+    onchain,
     overview,
     paper,
     price,
@@ -98,6 +100,8 @@ app.include_router(backtest.router, prefix="/api")
 app.include_router(paper.router, prefix="/api")
 app.include_router(overview.router, prefix="/api")
 app.include_router(drift.router, prefix="/api")
+app.include_router(onchain.router, prefix="/api")
+app.include_router(calendar.router, prefix="/api")
 app.include_router(live.router)
 
 
