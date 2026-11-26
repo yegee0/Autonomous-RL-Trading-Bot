@@ -1,0 +1,80 @@
+name: Weekly retrain
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"   # every Monday 03:00 UTC
+  workflow_dispatch:       # manual trigger from the Actions tab
+    inputs:
+      timesteps:
+        description: "PPO total timesteps"
+        default: "500000"
+      tickers:
+        description: "Comma-separated basket"
+        default: "BTC-USD,ETH-USD,SOL-USD,AAPL,TSLA,MSFT,NVDA,GOOGL"
+      walk_forward_ticker:
+        description: "Ticker for the walk-forward gate"
+        default: "BTC-USD"
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350   # training + eval can take 4h on free CPU runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Train generalist
+        run: |
+          python scripts/train_general.py \
+            --tickers "${{ github.event.inputs.tickers || 'BTC-USD,ETH-USD,SOL-USD,AAPL,TSLA,MSFT,NVDA,GOOGL' }}" \
+            --timesteps ${{ github.event.inputs.timesteps || '500000' }} \
+            --period 60d --interval 5m
+
+      - name: Walk-forward sanity
+        id: walk
+        run: |
+          python scripts/walk_forward.py \
+            --ticker "${{ github.event.inputs.walk_forward_ticker || 'BTC-USD' }}" \
+            --windows 6 --period 2y | tee wf.txt
+          # Require positive alpha in >= 50% of windows before promotion.
+          POS=$(grep -oE 'Positive-Alpha windows: [0-9]+/[0-9]+' wf.txt | awk '{print $3}')
+          GATE=$(python -c "n=('$POS').split('/'); print('yes' if n[0] and n[1] and int(n[0]) >= (int(n[1])+1)//2 else 'no')")
+          echo "promote=$GATE" >> "$GITHUB_OUTPUT"
+
+      - name: Evaluate ensemble
+        run: python scripts/evaluate_ensemble.py --period 1y --save eval.md
+
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trademaster-models-${{ github.run_number }}
+          path: |
+            models/trained/model_general.zip
+            models/trained/model_general_vecnorm.pkl
+            eval.md
+            wf.txt
+          if-no-files-found: error
+
+      - name: Push to Hugging Face
+        if: steps.walk.outputs.promote == 'yes'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_MODEL_REPO: ${{ secrets.HF_MODEL_REPO }}
+        run: |
+          if [ -z "$HF_TOKEN" ] || [ -z "$HF_MODEL_REPO" ]; then
+            echo "HF_TOKEN / HF_MODEL_REPO secret unset; skipping push"
+            exit 0
+          fi
+          python scripts/upload_model.py \
+            --repo "$HF_MODEL_REPO" \
+            --token "$HF_TOKEN" \
+            --message "Weekly retrain run ${{ github.run_number }}"
