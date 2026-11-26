@@ -85,10 +85,12 @@ def _init_guardrails() -> None:
 
 @app.get("/api/health")
 def health() -> dict:
+    from src.utils import notifier as _n
     return {
         "status": "ok",
         "service": "trademaster-api",
         "kill_switch_active": gr.kill_switch_active(),
+        "notify_channels": _n.configured_channels(),
     }
 
 

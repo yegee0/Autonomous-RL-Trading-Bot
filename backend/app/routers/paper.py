@@ -11,6 +11,7 @@ from backend.app.schemas.paper import (
 from backend.app.services import guardrails as gr
 from backend.app.services import market_service as ms
 from backend.app.services import paper_store as ps
+from src.utils import notifier as notify
 
 router = APIRouter()
 
@@ -89,6 +90,7 @@ def trade(req: PaperTradeRequest) -> PaperTrade:
         rsi=rsi,
     )
     if not decision.allowed:
+        notify.on_guardrail_block(ticker, decision.code, decision.reason)
         raise HTTPException(
             status_code=403,
             detail={"code": decision.code, "message": decision.reason},
@@ -100,6 +102,7 @@ def trade(req: PaperTradeRequest) -> PaperTrade:
         raise HTTPException(status_code=400, detail=str(e))
 
     gr.record_fill()
+    notify.on_paper_trade(ticker, t.side, t.qty, t.price)
     return PaperTrade(id=t.id, ts=t.ts, ticker=t.ticker, side=t.side, qty=t.qty, price=t.price, fee=t.fee)
 
 

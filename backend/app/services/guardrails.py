@@ -154,11 +154,13 @@ def check_order(
         day_pnl_pct = (equity - _day_start_equity) / _day_start_equity
         if day_pnl_pct <= -MAX_DAILY_LOSS_PCT:
             _kill_tripped_until_reset = True
-            return GuardrailDecision(
-                False,
-                f"Daily loss limit reached ({day_pnl_pct:.2%}); kill switch engaged",
-                "DAILY_LOSS",
-            )
+            reason = f"Daily loss limit reached ({day_pnl_pct:.2%}); kill switch engaged"
+            try:
+                from src.utils import notifier as _n
+                _n.on_kill_switch(reason)
+            except Exception:
+                pass
+            return GuardrailDecision(False, reason, "DAILY_LOSS")
 
     # 3) Rate limit.
     if _rate_limited_now():
