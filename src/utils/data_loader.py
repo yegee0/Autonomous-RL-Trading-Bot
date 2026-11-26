@@ -1,6 +1,5 @@
 import time
 import warnings
-from functools import lru_cache
 from typing import Optional
 
 import numpy as np

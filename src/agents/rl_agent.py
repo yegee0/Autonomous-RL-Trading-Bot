@@ -18,7 +18,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack, VecNormalize
 
 from src.models.neural_net import get_policy_kwargs, get_ppo_config
-from src.models.trading_env import OBS_DIM, StockTradingEnv, build_observation
+from src.models.trading_env import StockTradingEnv, build_observation
 from src.utils.data_loader import fetch_5m_with_indicators
 from src.utils.technical_indicators import add_advanced_indicators
 

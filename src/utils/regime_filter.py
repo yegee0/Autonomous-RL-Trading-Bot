@@ -10,7 +10,7 @@ so training distribution matches inference routing.
 from __future__ import annotations
 
 import os
-from typing import Iterable, List, Optional
+from typing import List
 
 import numpy as np
 import pandas as pd

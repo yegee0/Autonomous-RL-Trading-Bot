@@ -12,14 +12,11 @@ import pandas as pd
 
 from src.agents.rl_agent import (
     N_STACK,
-    _action_probs,
-    _confidence,
     calculate_fallback_signal,
     load_agent,
 )
 from src.models.trading_env import (
     COMMISSION,
-    OBS_DIM,
     SLIPPAGE_BPS_PER_ATR,
     SPREAD_BPS,
     build_observation,

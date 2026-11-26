@@ -19,7 +19,6 @@ import random
 import sys
 from typing import Dict, List, Optional
 
-import numpy as np
 import pandas as pd
 
 HERE = os.path.dirname(__file__)
@@ -33,7 +32,6 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack, VecNorm
 from src.agents.rl_agent import LoggingProgressCallback, MODELS_DIR, N_STACK
 from src.models.crisis_env import CrisisWrapperEnv
 from src.models.neural_net import get_policy_kwargs, get_ppo_config
-from src.models.trading_env import StockTradingEnv
 from src.utils.data_loader import fetch_data
 from src.utils.regime_filter import filter_frames
 from src.utils.technical_indicators import add_advanced_indicators

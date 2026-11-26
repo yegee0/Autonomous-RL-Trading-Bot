@@ -59,7 +59,7 @@ async def request_id_middleware(request: Request, call_next):
     start = time.perf_counter()
     try:
         response = await call_next(request)
-    except Exception as e:
+    except Exception:
         log.exception("[%s] unhandled error on %s %s", rid, request.method, request.url.path)
         return JSONResponse({"error": "internal_error", "request_id": rid}, status_code=500)
     dur_ms = (time.perf_counter() - start) * 1000

@@ -12,10 +12,9 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.agents.rl_agent import calculate_fallback_signal, get_ai_action, load_agent  # noqa: E402
+from src.agents.rl_agent import calculate_fallback_signal  # noqa: E402
 from src.agents.ensemble import predict_with_ensemble  # noqa: E402
 from src.agents.market_intelligence import MarketIntelligence  # noqa: E402
-from src.utils.technical_indicators import add_advanced_indicators  # noqa: E402
 from src.utils.risk_manager import calculate_position_sizing, calculate_risk_metrics  # noqa: E402
 
 from backend.app.schemas.market import (

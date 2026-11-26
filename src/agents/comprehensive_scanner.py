@@ -2,7 +2,7 @@ from duckduckgo_search import DDGS
 from transformers import BertTokenizer, BertForSequenceClassification, pipeline
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Tuple
 
 

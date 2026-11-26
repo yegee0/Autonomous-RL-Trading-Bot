@@ -27,8 +27,7 @@ import yfinance as yf  # noqa: E402
 
 from src.agents.ensemble import classify_regime, _load_expert  # noqa: E402
 from src.agents.rl_agent import (
-    _action_probs, _confidence, calculate_fallback_signal, load_agent,
-    _paths_for,
+    calculate_fallback_signal, load_agent, _paths_for,
 )
 from src.models.trading_env import COMMISSION, SPREAD_BPS, SLIPPAGE_BPS_PER_ATR, build_observation
 from src.utils.technical_indicators import add_advanced_indicators
@@ -261,7 +260,7 @@ def main():
 
     if args.save:
         with open(args.save, "w") as f:
-            f.write(f"# TradeMaster ensemble evaluation\n\n")
+            f.write("# TradeMaster ensemble evaluation\n\n")
             f.write(f"Period={args.period} Interval={args.interval}\n\n")
             f.write("```\n" + text + "\n```\n")
         print(f"\nSaved report → {args.save}")
