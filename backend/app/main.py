@@ -17,6 +17,7 @@ from backend.app.routers import (
     live,
     news,
     onchain,
+    options,
     overview,
     paper,
     portfolio_risk,
@@ -104,6 +105,7 @@ app.include_router(drift.router, prefix="/api")
 app.include_router(onchain.router, prefix="/api")
 app.include_router(calendar.router, prefix="/api")
 app.include_router(portfolio_risk.router, prefix="/api")
+app.include_router(options.router, prefix="/api")
 app.include_router(live.router)
 
 

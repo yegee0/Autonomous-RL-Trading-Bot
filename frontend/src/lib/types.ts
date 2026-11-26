@@ -249,6 +249,28 @@ export interface CalendarResponse {
   active_event: CalendarEvent | null;
 }
 
+export interface OptionRow {
+  strike: number;
+  last: number;
+  bid: number;
+  ask: number;
+  volume: number;
+  open_interest: number;
+  implied_vol: number;
+}
+
+export interface OptionChainResponse {
+  ticker: string;
+  expiry: string;
+  spot: number;
+  calls: OptionRow[];
+  puts: OptionRow[];
+  atm_iv: number | null;
+  skew_25d: number | null;
+  put_call_oi: number | null;
+  expiries: string[];
+}
+
 export interface PortfolioRiskReport {
   equity: number;
   cash: number;

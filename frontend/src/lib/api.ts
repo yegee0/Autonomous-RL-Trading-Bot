@@ -11,6 +11,7 @@ import type {
   MacroSnapshot,
   NewsFeed,
   OnChain,
+  OptionChainResponse,
   PaperPortfolio,
   PaperTrade,
   PortfolioRiskReport,
@@ -144,6 +145,13 @@ export const api = {
 
   async portfolioRisk(): Promise<PortfolioRiskReport> {
     const { data } = await http.get<PortfolioRiskReport>(`/paper/risk`);
+    return data;
+  },
+
+  async options(ticker: string, expiry?: string): Promise<OptionChainResponse> {
+    const { data } = await http.get<OptionChainResponse>(`/options/${ticker}`, {
+      params: expiry ? { expiry } : {},
+    });
     return data;
   },
 };

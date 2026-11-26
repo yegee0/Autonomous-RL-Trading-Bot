@@ -21,6 +21,7 @@ import { OnChainCard } from "../components/OnChainCard";
 import { OrderBook } from "../components/OrderBook";
 import { LiquidationFeed } from "../components/LiquidationFeed";
 import { CalendarCard } from "../components/CalendarCard";
+import { OptionsCard } from "../components/OptionsCard";
 
 type RailTab = "signal" | "overview" | "flow" | "paper" | "backtest" | "risk";
 const TABS: { id: RailTab; label: string }[] = [
@@ -213,6 +214,7 @@ export function Dashboard() {
                 <>
                   <CalendarCard ticker={ticker} />
                   <OnChainCard ticker={ticker} enabled={isCrypto} />
+                  <OptionsCard ticker={ticker} enabled={!isCrypto} />
                   <OrderBook ticker={ticker} enabled={isCrypto} />
                   <LiquidationFeed ticker={ticker} enabled={isCrypto} />
                 </>
