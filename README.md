@@ -1,161 +1,115 @@
 # TradeMaster
 
-An RL-powered market-analysis workbench. One generalist PPO policy, trained on scale-invariant features, scores signals across crypto, US stocks, and BIST. FastAPI backend, React + Vite + Tailwind frontend, Binance WebSocket live feed.
+RL-driven market workbench: regime-routed PPO ensemble scores signals across crypto, US stocks, and BIST — served through a FastAPI backend and a React dashboard.
 
-```
-┌──────────────────────────┐   HTTP + WS    ┌─────────────────────────────┐
-│  Frontend (Vite SPA)     │ ────────────── │  Backend (FastAPI)          │
-│  React · Tailwind        │                │  · /api/analyze, /signal    │
-│  lightweight-charts      │                │  · /api/price, /news        │
-│  TanStack Query          │                │  · /ws/live/{ticker}        │
-└──────────────────────────┘                │  Generalist PPO model       │
-                                            └─────────────────────────────┘
-```
+## Quick start
 
----
+**Docker (one command):**
 
-## Quick Start — Docker (recommended)
-
-```bash
-cp .env.example .env               # optional: fill in TELEGRAM_BOT_TOKEN, HF_MODEL_REPO
-docker compose up --build
-```
-
-Open <http://localhost:8000> — the SPA and API are served from the same port.
-
-## Quick Start — Local dev
-
-Prereqs: Python 3.10, Node 20, ~2 GB disk (torch + transformers).
-
-```bash
-# 1 — backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
-
-# 2 — frontend (new terminal)
-cd frontend
-npm install
-npm run dev     # opens on :5173, proxies /api and /ws to :8000
-```
-
-Visit <http://localhost:5173>.
-
----
-
-## Model
-
-A single generalist PPO policy serves all tickers. Observations are scale-invariant (ratios + pct returns), so one model handles BTC at \$60k and AAPL at \$200.
-
-### Download a pre-trained model
-
-```bash
-HF_MODEL_REPO=your-user/trademaster-rl-generalist \
-  python scripts/download_model.py
-```
-
-Puts `model_general.zip` + `model_general_vecnorm.pkl` into `models/trained/`.
-
-### Train your own
-
-```bash
-python scripts/train_general.py \
-  --tickers BTC-USD,ETH-USD,AAPL,TSLA,MSFT,NVDA \
-  --timesteps 500000 \
-  --period 60d --interval 5m
-```
-
-A `MultiTickerEnv` swaps the underlying frame on every reset, so the policy never overfits one asset. 500k steps take ~30–45 min on a mid-range GPU.
-
-If no model is on disk, the backend falls back to a deterministic rule-based signal (RSI + MACD + sentiment).
-
----
-
-## Project layout
-
-```
-.
-├── backend/
-│   └── app/               FastAPI app, routers, services, Pydantic schemas
-├── src/
-│   ├── agents/            PPO loader + market intelligence (news/reddit)
-│   ├── models/            Scale-invariant env + policy config
-│   └── utils/             Indicators, data loader, risk manager, alerts
-├── frontend/
-│   └── src/               React + Vite SPA
-├── scripts/
-│   ├── train_general.py   Generalist PPO trainer
-│   └── download_model.py  Hugging Face Hub downloader
-├── models/trained/        .zip + .pkl artefacts (gitignored)
-├── Dockerfile             Multi-stage: frontend build → Python runtime
-└── docker-compose.yml     Single-container deployment
-```
-
----
-
-## Environment variables
-
-| Var | Default | Purpose |
-|---|---|---|
-| `HOST` | `0.0.0.0` | Uvicorn bind host |
-| `PORT` | `8000` | Uvicorn port |
-| `LOG_LEVEL` | `INFO` | Python logging level |
-| `CORS_ORIGINS` | localhost:5173,:3000,:8000 | Comma-separated CORS allowlist |
-| `TELEGRAM_BOT_TOKEN` | — | Optional bot token for signal alerts |
-| `HF_MODEL_REPO` | — | HF repo id for `scripts/download_model.py` |
-| `HF_MODEL_REV` | `main` | Branch/tag/commit for the above |
-
-Copy `.env.example` → `.env` and fill as needed.
-
----
-
-## API surface (summary)
-
-| Method | Path | Description |
-|---|---|---|
-| GET  | `/api/health` | Readiness probe |
-| GET  | `/api/tickers` | Catalog + model-availability flag |
-| POST | `/api/analyze` | `{ticker, period, interval, sentiment}` → full dashboard payload |
-| GET  | `/api/signal/{ticker}` | AI action + confidence |
-| GET  | `/api/price/{ticker}` | OHLCV candles |
-| GET  | `/api/news/{ticker}` | Financial headlines + Reddit chatter + aggregate sentiment |
-| GET  | `/api/overview/{ticker}` | Fundamentals (market cap, P/E, margins, 52w range) |
-| GET  | `/api/macro` | VIX / US10Y / DXY / Fear & Greed snapshot |
-| GET  | `/api/backtest/{ticker}` | Replay the policy on historical bars |
-| GET  | `/api/paper/portfolio` | Paper trading portfolio + positions |
-| WS   | `/ws/live/{ticker}` | Binance kline relay (crypto pairs) |
-
-OpenAPI docs are served at `/docs`.
-
----
-
-## Türkçe hızlı başlangıç
-
-### Docker ile tek komut
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
-Ardından <http://localhost:8000>.
 
-### Yerel geliştirme
+Open <http://localhost:8000>.
+
+**Local dev:**
+
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn backend.app.main:app --port 8000
 
-cd frontend && npm install && npm run dev
+cd frontend && npm install && npm run dev   # :5173, proxies /api + /ws → :8000
 ```
-<http://localhost:5173> aç.
 
-### Model eğitimi
+## Training
+
+A rule-based classifier routes each bar to one of four PPO heads — `general`, `trend`, `range`, `crisis` — based on ADX, ATR%, VIX, and drawdown. Observations are scale-invariant so the same policy handles BTC at \$60k and AAPL at \$200.
+
 ```bash
+# Generalist (default; ~30–45 min on CPU for 500k steps)
 python scripts/train_general.py --timesteps 500000
-```
-Çıkışta `models/trained/model_general.zip` oluşur, backend otomatik yükler.
 
----
+# Regime-specific heads
+python scripts/train_general.py --regime trend  --timesteps 300000
+python scripts/train_general.py --regime range  --timesteps 300000
+python scripts/train_general.py --regime crisis --timesteps 300000
+
+# Or train all four in sequence:
+./scripts/train_ensemble.sh
+```
+
+Models land in `models/trained/`. If a head is missing, the ensemble falls back to the generalist; if none exist, to a deterministic RSI+MACD rule.
+
+**Evaluation:**
+
+```bash
+python scripts/evaluate_ensemble.py --period 1y        # head-vs-head-vs-B&H table
+python scripts/walk_forward.py --ticker BTC-USD --windows 6   # rolling validation
+```
+
+**Pre-trained from Hugging Face:**
+
+```bash
+HF_MODEL_REPO=your-user/trademaster-rl-generalist python scripts/download_model.py
+```
+
+## Project layout
+
+```
+backend/app/        FastAPI app — routers, services, Pydantic schemas
+src/agents/         PPO loader, regime ensemble, market intelligence
+src/models/         Scale-invariant env, crisis wrapper, policy config
+src/utils/          Indicators, data loader, risk manager, regime filter
+scripts/            Train / evaluate / walk-forward / HF up- & downloaders
+frontend/src/       React + Vite SPA (dashboard, charts, flow panels)
+models/trained/     .zip + .pkl artefacts (gitignored)
+```
+
+## Environment
+
+| Var | Default | Purpose |
+|---|---|---|
+| `HOST` / `PORT` | `0.0.0.0` / `8000` | Uvicorn bind |
+| `LOG_LEVEL` | `INFO` | Python logging |
+| `CORS_ORIGINS` | localhost :5173, :8000 | CORS allowlist |
+| `TELEGRAM_BOT_TOKEN` | — | Optional signal alerts |
+| `HF_MODEL_REPO` / `HF_MODEL_REV` | — / `main` | Pre-trained model source |
+| `REDDIT_CLIENT_ID` / `_SECRET` / `_USER_AGENT` | — | Reddit sentiment (optional) |
+| `MAX_POSITION_PCT` / `MAX_ORDER_PCT` / `MAX_DAILY_LOSS_PCT` | 0.20 / 0.10 / 0.05 | Paper-trading guardrails |
+| `TRADE_RATE_LIMIT` / `_WINDOW` | 10 / 60s | Order rate limit |
+| `EVENT_WINDOW_LOCK` | `1` | Block buys ±30m around FOMC/CPI/NFP/earnings |
+
+See `.env.example`.
+
+## API surface
+
+| | Path | Description |
+|---|---|---|
+| GET | `/api/health` | Readiness + kill-switch status |
+| GET | `/api/tickers` | Catalog + model-availability flag |
+| POST | `/api/analyze` | Full dashboard payload (candles, indicators, signal, risk, sizing) |
+| GET | `/api/signal/{t}` | Action + confidence + regime + expert used |
+| GET | `/api/price/{t}` | OHLCV candles |
+| GET | `/api/news/{t}` | Headlines + Reddit + aggregate sentiment |
+| GET | `/api/overview/{t}` | Fundamentals (crypto returns `is_crypto`) |
+| GET | `/api/macro` | VIX / US10Y / DXY / Fear & Greed |
+| GET | `/api/backtest/{t}` | Replay policy over historical bars |
+| GET | `/api/drift/{t}` | Feature / policy / PnL drift report |
+| GET | `/api/calendar` | Upcoming macro + earnings events |
+| GET | `/api/onchain/{t}` | Funding rate + OI + crowded side (crypto) |
+| — | `/api/paper/*` | Paper portfolio, trades, guardrails |
+| WS | `/ws/live/{t}` | Binance kline stream |
+| WS | `/ws/depth/{t}` | Order-book depth20 |
+| WS | `/ws/liquidations/{t}` | Forced-liquidation feed |
+
+OpenAPI docs: `/docs`.
+
+## Guardrails
+
+Every paper order passes `check_order` before hitting the ledger — kill-switch, daily-loss cap, rate limit, position size, per-order size, RSI extremes, and ±30m macro-event window. See `backend/app/services/guardrails.py`.
 
 ## License
 
-MIT (planned). Trained models are released separately on Hugging Face Hub.
+MIT (planned). Trained models released separately on Hugging Face Hub.
